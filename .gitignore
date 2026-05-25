@@ -1,0 +1,11 @@
+# Elixir build artifacts
+/_build/
+/deps/
+/.elixir_ls/
+
+# Static/generated assets
+/priv/static/cache_manifest.json
+
+# OS/editor files
+.DS_Store
+*.swp

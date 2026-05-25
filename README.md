@@ -4,7 +4,7 @@
 
 ## Proyecto Final: Desarrollo de un Juego Multijugador en Paradigma Funcional
 
-**Territory Tank Wars** es un videojuego multijugador en tiempo real desarrollado en **Scala**, orientado a cumplir los requisitos de un proyecto final basado en el paradigma funcional. El juego combina combate entre tanques, control territorial, sincronización multijugador, eventos dinámicos y un mapa interactivo que reacciona al comportamiento de los jugadores.
+**Territory Tank Wars** es un videojuego multijugador en tiempo real desarrollado en **Elixir**, orientado a cumplir los requisitos de un proyecto final basado en el paradigma funcional. El juego combina combate entre tanques, control territorial, sincronización multijugador, eventos dinámicos y un mapa interactivo que reacciona al comportamiento de los jugadores.
 
 El sistema está diseñado para permitir la participación simultánea de mínimo tres jugadores conectados desde distintos dispositivos. Cada jugador controla un tanque dentro de una arena 2D vista desde arriba, donde deberá moverse, disparar, capturar territorio, esquivar ataques, aprovechar bonificaciones y competir por la victoria según el modo de juego seleccionado.
 
@@ -14,7 +14,7 @@ La propuesta busca mantener un equilibrio entre creatividad, atractivo visual y 
 
 ## 1. Objetivo del proyecto
 
-El objetivo principal del proyecto es implementar un sistema de juego interactivo para mínimo tres jugadores simultáneos utilizando exclusivamente **Scala** como lenguaje de programación funcional.
+El objetivo principal del proyecto es implementar un sistema de juego interactivo para mínimo tres jugadores simultáneos utilizando exclusivamente **Elixir** como lenguaje de programación funcional.
 
 El juego debe demostrar el uso de estructuras de datos inmutables, funciones puras, concurrencia mediante actores o agentes, sincronización de jugadores, comunicación mediante paso de mensajes y visualización en tiempo real de las acciones de todos los participantes.
 
@@ -259,7 +259,7 @@ Gana el último jugador que no haya sido eliminado.
 
 ## 12. Requisitos técnicos del proyecto
 
-El proyecto se desarrollará usando **Scala** y deberá cumplir los requisitos técnicos definidos para el trabajo final.
+El proyecto se desarrollará usando **Elixir** y deberá cumplir los requisitos técnicos definidos para el trabajo final.
 
 ---
 
@@ -267,10 +267,10 @@ El proyecto se desarrollará usando **Scala** y deberá cumplir los requisitos t
 
 El estado del juego se representará mediante estructuras inmutables como:
 
-- `Map`
-- `List`
-- `Tuple`
-- `case class`
+- Mapas (`%{}`)
+- Listas
+- Tuplas
+- Structs
 
 El estado global del juego puede incluir información como:
 
@@ -328,21 +328,21 @@ De esta manera, todos los jugadores podrán ver en tiempo real:
 
 ## 12.4. Concurrencia mediante actores o agentes
 
-El sistema utilizará el modelo de actores o agentes para manejar la concurrencia.
+El sistema utilizará el modelo de procesos para manejar la concurrencia.
 
 Una estructura viable sería:
 
 ```text
-GameActor
- ├── PlayerActor 1
- ├── PlayerActor 2
- ├── PlayerActor 3
- ├── TerritoryActor
- ├── ProjectileActor
- └── EventActor
+GameServer
+ ├── PlayerProcess 1
+ ├── PlayerProcess 2
+ ├── PlayerProcess 3
+ ├── TerritoryProcess
+ ├── ProjectileProcess
+ └── EventProcess
 ```
 
-El `GameActor` coordinará la partida principal. Los actores de jugador recibirán las acciones individuales de cada usuario, como moverse, disparar o saltar. Otros actores podrán encargarse de proyectiles, territorio o eventos globales.
+El `GameServer` coordinará la partida principal, siguiendo el patrón de un proceso servidor en Elixir. Los procesos de jugador recibirán las acciones individuales de cada usuario, como moverse, disparar o saltar. Otros procesos podrán encargarse de proyectiles, territorio o eventos globales.
 
 Este modelo permite manejar múltiples jugadores simultáneos de forma organizada y coherente.
 
@@ -350,7 +350,7 @@ Este modelo permite manejar múltiples jugadores simultáneos de forma organizad
 
 ## 12.5. Comunicación mediante paso de mensajes
 
-La comunicación entre actores se realizará mediante paso de mensajes.
+La comunicación entre procesos se realizará mediante paso de mensajes, aprovechando el modelo de concurrencia de Elixir.
 
 Ejemplos de mensajes del sistema:
 
@@ -367,13 +367,13 @@ CaptureTower
 GameOver
 ```
 
-Este enfoque evita el uso de variables globales mutables y permite que las acciones del juego se procesen de manera ordenada.
+Este enfoque evita el uso de variables globales mutables y permite que las acciones del juego se procesen de manera ordenada mediante mensajes entre procesos.
 
 ---
 
 ## 12.6. Visualización en tiempo real
 
-La visualización se realizará mediante **HTML Canvas** conectado al servidor Scala por medio de **WebSockets**, o mediante una biblioteca gráfica compatible con Scala si se decide usar una alternativa nativa.
+La visualización se realizará mediante **HTML Canvas** conectado al servidor Elixir por medio de **WebSockets**. La opción recomendada es utilizar Phoenix Channels o una solución equivalente basada en WebSockets para comunicar el cliente con el servidor.
 
 La opción recomendada es usar HTML Canvas, porque permite separar claramente la lógica del servidor de la parte visual del cliente.
 
@@ -404,11 +404,11 @@ Jugador realiza una acción
         ↓
 Cliente envía mensaje por WebSocket
         ↓
-Servidor Scala recibe la acción
+Servidor Elixir recibe la acción
         ↓
-Actor correspondiente procesa el mensaje
+Proceso correspondiente procesa el mensaje
         ↓
-GameActor actualiza el estado global
+GameServer actualiza el estado global
         ↓
 Servidor envía el estado actualizado a todos los clientes
         ↓
@@ -463,21 +463,21 @@ Estas características aumentan la profundidad del juego, pero pueden implementa
 
 ---
 
-## 15. Justificación del uso de Scala
+## 15. Justificación del uso de Elixir
 
-Scala es adecuado para este proyecto porque permite combinar programación funcional con capacidades de concurrencia.
+Elixir es adecuado para este proyecto porque está diseñado para construir sistemas concurrentes, distribuidos y tolerantes a fallos sobre la máquina virtual de Erlang. Su modelo de procesos ligeros permite manejar múltiples jugadores conectados al mismo tiempo de forma natural.
 
-El juego puede representar su estado mediante estructuras inmutables como `case class`, `Map`, `List` y `Tuple`. Además, la lógica principal puede organizarse mediante funciones puras que transforman el estado del juego a partir de acciones recibidas.
+El juego puede representar su estado mediante estructuras inmutables como mapas (`%{}`), listas, tuplas y structs. Además, la lógica principal puede organizarse mediante funciones puras que transforman el estado del juego a partir de acciones recibidas.
 
-Para la concurrencia, Scala puede trabajar con un modelo de actores o agentes, permitiendo que cada jugador, el bucle principal del juego, los proyectiles o los eventos se gestionen mediante componentes concurrentes que se comunican por mensajes.
+Para la concurrencia, Elixir permite usar procesos ligeros, paso de mensajes y módulos como `GenServer`, lo que facilita la creación de un servidor principal de partida, procesos asociados a jugadores y procesos auxiliares para eventos, territorio o proyectiles.
 
-Esto permite cumplir los requisitos del trabajo final y, al mismo tiempo, mantener una arquitectura clara para un juego multijugador.
+Esta elección permite cumplir los requisitos del trabajo final y, al mismo tiempo, mantener una arquitectura clara para un juego multijugador en tiempo real.
 
 ---
 
 ## 16. Conclusión
 
-**Territory Tank Wars** es una propuesta de videojuego multijugador funcional en Scala que combina combate, control territorial, sincronización en tiempo real y un entorno interactivo.
+**Territory Tank Wars** es una propuesta de videojuego multijugador funcional en Elixir que combina combate, control territorial, sincronización en tiempo real y un entorno interactivo.
 
 El juego cumple con los requisitos técnicos planteados: uso de estructuras inmutables, funciones puras, concurrencia mediante actores o agentes, paso de mensajes, sincronización de al menos tres jugadores y visualización en tiempo real de posiciones y acciones.
 
