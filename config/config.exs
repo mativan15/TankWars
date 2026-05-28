@@ -14,4 +14,6 @@ config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
-import_config "#{config_env()}.exs"
+if File.exists?("config/#{config_env()}.exs") do
+  import_config "#{config_env()}.exs"
+end

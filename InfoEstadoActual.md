@@ -96,7 +96,6 @@ La primera vez:
 ```bash
 brew install erlang elixir
 mix deps.get
-mix test
 mix phx.server
 ```
 
@@ -127,7 +126,6 @@ Vista general:
 │   └── tankwars_web.ex
 ├── priv/
 │   └── static/
-├── test/
 ├── .formatter.exs
 ├── .gitignore
 ├── mix.exs

@@ -16,7 +16,7 @@ defmodule TankWarsWeb.PageController do
           <section class="hud" aria-label="Estado de partida">
             <div>
               <p class="eyebrow">Territory Tank Wars</p>
-              <h1>Arena mínima</h1>
+              <h1>Arena</h1>
             </div>
             <div class="status-grid">
               <div>
