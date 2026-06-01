@@ -8,14 +8,14 @@ defmodule TankWarsWeb.PageController do
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Territory Tank Wars</title>
+        <title>Tank Wars</title>
         <link rel="stylesheet" href="/assets/styles.css">
       </head>
       <body>
         <main class="shell">
           <section class="hud" aria-label="Estado de partida">
             <div>
-              <p class="eyebrow">Territory Tank Wars</p>
+              <p class="eyebrow">Tank Wars</p>
               <h1>Arena</h1>
             </div>
             <div class="status-grid">
