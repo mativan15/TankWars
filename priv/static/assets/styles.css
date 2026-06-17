@@ -116,3 +116,18 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+.status-grid div#timer-box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
+
+.status-grid div#timer-box,
+.status-grid div#lives-box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
