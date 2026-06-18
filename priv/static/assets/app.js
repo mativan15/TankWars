@@ -14,7 +14,6 @@
   arenaWrap.appendChild(menuOverlay);
 
   const statusGrid = document.querySelector(".status-grid");
-  statusGrid.style.gridTemplateColumns = "repeat(5, minmax(80px, 1fr))"; 
 
   if (!document.querySelector("#lives-box")) {
     const livesDiv = document.createElement("div");
@@ -31,6 +30,14 @@
     statusGrid.insertBefore(timerDiv, statusGrid.firstChild);
   }
   const timerEl = document.querySelector("#hud-timer");
+
+  if (!document.querySelector("#ammo-box")) {
+    const ammoDiv = document.createElement("div");
+    ammoDiv.id = "ammo-box";
+    ammoDiv.innerHTML = `<span>Balas</span><strong id="hud-ammo" style="color: #f5c542;">-</strong>`;
+    statusGrid.insertBefore(ammoDiv, connectionEl.parentElement);
+  }
+  const ammoEl = document.querySelector("#hud-ammo");
 
   const topic = "game:lobby";
   const joinRef = "1";
@@ -50,6 +57,9 @@
       
       const currentLives = state.players[playerId].lives;
       livesEl.textContent = "❤️".repeat(currentLives) + "🖤".repeat(5 - currentLives);
+      updateAmmoHud(state.players[playerId]);
+    } else {
+      ammoEl.textContent = "-";
     }
 
     if (state) {
@@ -80,6 +90,19 @@
   function countOwnedTerritory() {
     if (!state || !playerId || !state.territory) return 0;
     return Object.values(state.territory).filter(owner => owner === playerId).length;
+  }
+
+  function updateAmmoHud(player) {
+    const maxAmmo = player.max_ammo || 6;
+    const ammo = Number.isFinite(player.ammo) ? player.ammo : maxAmmo;
+
+    if (ammo <= 0) {
+      ammoEl.textContent = "recargando";
+      ammoEl.style.color = "#e5484d";
+    } else {
+      ammoEl.textContent = `${ammo}/${maxAmmo}`;
+      ammoEl.style.color = "#f5c542";
+    }
   }
 
   function push(topicName, event, payload) {
@@ -131,6 +154,28 @@
     if (!moves[key]) return;
     event.preventDefault();
     push(topic, "move_player", { dx: moves[key][0], dy: moves[key][1] });
+  }
+
+  function handleCanvasMouseDown(event) {
+    if (event.button !== 0 || !state || state.game_state !== "playing" || !playerId) return;
+
+    const player = state.players[playerId];
+    if (!player || player.lives <= 0) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const cellW = rect.width / state.width;
+    const cellH = rect.height / state.height;
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
+    const playerX = (player.x + 0.5) * cellW;
+    const playerY = (player.y + 0.5) * cellH;
+    const dx = (clickX - playerX) / cellW;
+    const dy = (clickY - playerY) / cellH;
+
+    if (Math.hypot(dx, dy) === 0) return;
+
+    event.preventDefault();
+    push(topic, "shoot_player", { dx, dy });
   }
 
   function resizeCanvas() {
@@ -293,6 +338,7 @@
 
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener("keydown", handleKeydown);
+  canvas.addEventListener("mousedown", handleCanvasMouseDown);
   resizeCanvas();
   updateHud();
   connect();

@@ -56,9 +56,9 @@ h1 {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  grid-template-columns: repeat(6, minmax(78px, 1fr));
   gap: 8px;
-  min-width: min(460px, 100%);
+  min-width: min(700px, 100%);
 }
 
 .status-grid div {
@@ -98,6 +98,7 @@ h1 {
   display: block;
   width: 100%;
   aspect-ratio: 24 / 14;
+  cursor: crosshair;
 }
 
 @media (max-width: 760px) {
@@ -125,7 +126,8 @@ h1 {
 }
 
 .status-grid div#timer-box,
-.status-grid div#lives-box {
+.status-grid div#lives-box,
+.status-grid div#ammo-box {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
