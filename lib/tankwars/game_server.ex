@@ -7,10 +7,10 @@ defmodule TankWars.GameServer do
 
   @name __MODULE__
   @player_ids ["p1", "p2", "p3"]
-  @width 16
-  @height 10
-  @tick_rate 100 
-  @game_duration 60 
+  @width 24
+  @height 14
+  @tick_rate 100
+  @game_duration 60
 
   # API
   def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: @name)
@@ -29,7 +29,7 @@ defmodule TankWars.GameServer do
   @impl true
   def handle_call({:join_player, name}, _from, state) do
     player_id = Enum.at(@player_ids, rem(state.next_player_index, length(@player_ids)))
-    new_state = state 
+    new_state = state
                 |> put_in([:players, player_id, :name], display_name(name, player_id))
                 |> Map.update!(:next_player_index, &(&1 + 1))
     broadcast_state(new_state)
@@ -102,8 +102,8 @@ defmodule TankWars.GameServer do
   def initial_state do
     players = %{
       "p1" => %{id: "p1", name: "Rojo", x: 1, y: 1, color: "#e5484d", lives: 5, hit_timer: 0},
-      "p2" => %{id: "p2", name: "Azul", x: 14, y: 1, color: "#3b82f6", lives: 5, hit_timer: 0},
-      "p3" => %{id: "p3", name: "Verde", x: 7, y: 8, color: "#22c55e", lives: 5, hit_timer: 0}
+      "p2" => %{id: "p2", name: "Azul", x: 23, y: 1, color: "#3b82f6", lives: 5, hit_timer: 0},
+      "p3" => %{id: "p3", name: "Verde", x: 12, y: 13, color: "#22c55e", lives: 5, hit_timer: 0}
     }
     territory = Map.new(players, fn {id, p} -> {"#{p.x},#{p.y}", id} end)
 
@@ -121,7 +121,9 @@ defmodule TankWars.GameServer do
   defp generate_initial_map(state) do
     state = spawn_random_tower(state)
     state = spawn_random_tower(state)
-    Enum.reduce(1..4, state, fn _, acc -> spawn_cobertura_muro(acc) end)
+    state = spawn_random_tower(state)
+    state = spawn_random_tower(state)
+    Enum.reduce(1..8, state, fn _, acc -> spawn_cobertura_muro(acc) end)
   end
 
   defp spawn_random_tower(state) do
@@ -132,8 +134,8 @@ defmodule TankWars.GameServer do
 
   defp spawn_cobertura_muro(state) do
     dir = Enum.random([:h, :v])
-    rx = Enum.random(2..12)
-    ry = Enum.random(2..6)
+    rx = Enum.random(2..(@width - 3))
+    ry = Enum.random(2..(@height - 3))
 
     coords = case dir do
       :h -> ["#{rx},#{ry}", "#{rx+1},#{ry}", "#{rx+2},#{ry}"]
@@ -145,7 +147,7 @@ defmodule TankWars.GameServer do
     if collision do
       spawn_cobertura_muro(state)
     else
-      Enum.reduce(coords, state, fn k, acc -> 
+      Enum.reduce(coords, state, fn k, acc ->
         put_in(acc, [:obstacles, k], %{type: "muro_gris", health: 50})
       end)
     end
@@ -173,7 +175,7 @@ defmodule TankWars.GameServer do
 
   defp spawn_tower_projectiles(state) do
     torres = Enum.filter(state.obstacles, fn {_, v} -> v.type == "torre_vida" end)
-    
+
     Enum.reduce(torres, state, fn {pos, torre}, acc ->
       tiene_bala_activa = Enum.any?(acc.projectiles, fn p -> p.origin_id == torre.id end)
 
@@ -182,10 +184,10 @@ defmodule TankWars.GameServer do
       else
         [x, y] = String.split(pos, ",") |> Enum.map(&String.to_integer/1)
         {dx, dy} = Enum.random([{0, -0.4}, {0, 0.4}, {-0.4, 0}, {0.4, 0}])
-        
+
         nuevo_proyectile = %{
           x: x + 0.5, y: y + 0.5,
-          dx: dx, dy: dy, 
+          dx: dx, dy: dy,
           origin_id: torre.id
         }
         Map.update!(acc, :projectiles, &([nuevo_proyectile | &1]))
@@ -194,11 +196,11 @@ defmodule TankWars.GameServer do
   end
 
   defp update_projectiles(state) do
-    projectiles = Enum.map(state.projectiles, fn p -> 
-      %{p | x: p.x + p.dx, y: p.y + p.dy} 
+    projectiles = Enum.map(state.projectiles, fn p ->
+      %{p | x: p.x + p.dx, y: p.y + p.dy}
     end)
 
-    {en_pantalla, _fuera} = Enum.split_with(projectiles, fn p -> 
+    {en_pantalla, _fuera} = Enum.split_with(projectiles, fn p ->
       p.x >= 0 and p.x <= @width and p.y >= 0 and p.y <= @height
     end)
 
@@ -241,7 +243,7 @@ defmodule TankWars.GameServer do
     ry = Enum.random(0..(@height - 1))
     key = "#{rx},#{ry}"
 
-    collision = Map.has_key?(state.obstacles, key) or 
+    collision = Map.has_key?(state.obstacles, key) or
                 Enum.any?(state.players, fn {_, p} -> p.x == rx and p.y == ry end)
 
     if collision, do: find_empty_coordinate(state), else: key

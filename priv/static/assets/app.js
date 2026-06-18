@@ -3,7 +3,7 @@
   const ctx = canvas.getContext("2d");
   const connectionEl = document.querySelector("#connection");
   const playerEl = document.querySelector("#player");
-  const tickEl = document.querySelector("#tick");
+  const territoryEl = document.querySelector("#territory-count");
 
   const arenaWrap = document.querySelector(".arena-wrap");
   arenaWrap.style.position = "relative";
@@ -42,7 +42,7 @@
 
   function updateHud() {
     connectionEl.textContent = !connected ? "desconectado" : playerId ? "sincronizado" : "conectado";
-    tickEl.textContent = state ? String(state.tick) : "0";
+    territoryEl.textContent = String(countOwnedTerritory());
 
     if (state && playerId && state.players[playerId]) {
       playerEl.textContent = state.players[playerId].name;
@@ -75,6 +75,11 @@
         document.querySelector("#reset-btn").addEventListener("click", () => push(topic, "reset", {}));
       }
     }
+  }
+
+  function countOwnedTerritory() {
+    if (!state || !playerId || !state.territory) return 0;
+    return Object.values(state.territory).filter(owner => owner === playerId).length;
   }
 
   function push(topicName, event, payload) {

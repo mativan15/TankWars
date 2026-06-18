@@ -26,9 +26,9 @@ body {
 }
 
 .shell {
-  width: min(1120px, calc(100vw - 32px));
+  width: calc(100vw - 360px);
   margin: 0 auto;
-  padding: 24px 0;
+  padding: 26px 0;
 }
 
 .hud {
@@ -97,13 +97,13 @@ h1 {
 #arena {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 24 / 14;
 }
 
 @media (max-width: 760px) {
   .shell {
-    width: min(100vw - 20px, 1120px);
-    padding: 12px 0;
+    width: min(100vw - 8px, 1120px);
+    padding: 6px 0;
   }
 
   .hud {

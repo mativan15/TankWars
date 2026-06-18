@@ -15,8 +15,8 @@ defmodule TankWarsWeb.PageController do
         <main class="shell">
           <section class="hud" aria-label="Estado de partida">
             <div>
-              <p class="eyebrow">Tank Wars</p>
-              <h1>Arena</h1>
+              <p class="eyebrow">Ivan Sardón - Diego Vasquez - Steffano Ballesteros</p>
+              <h1>Tank Wars</h1>
             </div>
             <div class="status-grid">
               <div>
@@ -28,14 +28,14 @@ defmodule TankWarsWeb.PageController do
                 <strong id="player">sin asignar</strong>
               </div>
               <div>
-                <span>Tick</span>
-                <strong id="tick">0</strong>
+                <span>Territorio</span>
+                <strong id="territory-count">0</strong>
               </div>
             </div>
           </section>
 
           <section class="arena-wrap" aria-label="Arena">
-            <canvas id="arena" width="960" height="600"></canvas>
+            <canvas id="arena" width="1200" height="800"></canvas>
           </section>
         </main>
         <script src="/assets/app.js"></script>
