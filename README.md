@@ -56,6 +56,16 @@ mix compile
 mix phx.server
 ```
 
+O alternativamente, para tener acceso a la consola interactiva de Elixir:
+```bash
+iex -S mix phx.server
+```
+
+```bash
+recompile()
+TankWars.GameServer.reset()
+```
+
 Cuando el servidor esté levantado, abre:
 
 * Juego: `http://localhost:4000`
