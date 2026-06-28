@@ -1,43 +1,36 @@
 (() => {
+  const COLORS = {
+    arenaTop: "#160b2a",
+    arenaBottom: "#07101d",
+    cyan: "#00f5ff",
+    blue: "#008cff",
+    danger: "#ff315d",
+    gold: "#f9f871",
+    green: "#39ff88",
+    towerHealth: "#00ff66",
+    wall: "#211331",
+    wallHighlight: "#39244d",
+    wallBorder: "#a855f7",
+    ink: "#07040f",
+    text: "#f4faff"
+  };
+
   const canvas = document.querySelector("#arena");
   const ctx = canvas.getContext("2d");
-  const connectionEl = document.querySelector("#connection");
   const playerEl = document.querySelector("#player");
-  const territoryEl = document.querySelector("#territory-count");
+  const playerBox = document.querySelector("#player-box");
+  const territoryLeaderboardEl = document.querySelector("#territory-leaderboard");
+  const livesEl = document.querySelector("#hud-lives");
+  const timerEl = document.querySelector("#hud-timer");
+  const ammoEl = document.querySelector("#hud-ammo");
+  const pauseButton = document.querySelector("#pause-btn");
+  const resetButton = document.querySelector("#global-reset-btn");
 
   const arenaWrap = document.querySelector(".arena-wrap");
-  arenaWrap.style.position = "relative";
 
   const menuOverlay = document.createElement("div");
   menuOverlay.id = "menu-overlay";
-  menuOverlay.style = "position: absolute; inset: 0; background: rgba(17, 19, 18, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; z-index: 10; color: #f1f5f2; font-family: system-ui, sans-serif;";
   arenaWrap.appendChild(menuOverlay);
-
-  const statusGrid = document.querySelector(".status-grid");
-
-  if (!document.querySelector("#lives-box")) {
-    const livesDiv = document.createElement("div");
-    livesDiv.id = "lives-box";
-    livesDiv.innerHTML = `<span>Mis Vidas</span><strong id="hud-lives" style="color: #e5484d; font-size: 1.1rem;">❤️❤️❤️❤️❤️</strong>`;
-    statusGrid.insertBefore(livesDiv, statusGrid.firstChild);
-  }
-  const livesEl = document.querySelector("#hud-lives");
-
-  if (!document.querySelector("#timer-box")) {
-    const timerDiv = document.createElement("div");
-    timerDiv.id = "timer-box";
-    timerDiv.innerHTML = `<span>Tiempo</span><strong id="hud-timer" style="color: #f5c542;">60s</strong>`;
-    statusGrid.insertBefore(timerDiv, statusGrid.firstChild);
-  }
-  const timerEl = document.querySelector("#hud-timer");
-
-  if (!document.querySelector("#ammo-box")) {
-    const ammoDiv = document.createElement("div");
-    ammoDiv.id = "ammo-box";
-    ammoDiv.innerHTML = `<span>Balas</span><strong id="hud-ammo" style="color: #f5c542;">-</strong>`;
-    statusGrid.insertBefore(ammoDiv, connectionEl.parentElement);
-  }
-  const ammoEl = document.querySelector("#hud-ammo");
 
   const topic = "game:lobby";
   const joinRef = "1";
@@ -49,43 +42,63 @@
   let joinRejected = false;
   let joinError = "";
   let lastAimSentAt = 0;
+  let lastLeaderboardSignature = "";
   const aimSendIntervalMs = 50;
   const clientId = getClientId();
 
   function updateHud() {
-    connectionEl.textContent = joinRejected ? "sala llena" : !connected ? "desconectado" : playerId ? "sincronizado" : "conectado";
-    territoryEl.textContent = String(countOwnedTerritory());
+    updateTerritoryLeaderboard();
+    const canControlGame = connected && !joinRejected && Boolean(playerId && state);
+    const isPaused = state && state.game_state === "paused";
+
+    pauseButton.disabled = !canControlGame || !["playing", "paused"].includes(state.game_state);
+    pauseButton.textContent = isPaused ? "▶ Reanudar" : "⏸ Pausar";
+    pauseButton.classList.toggle("is-active", Boolean(isPaused));
+    pauseButton.setAttribute("aria-pressed", String(Boolean(isPaused)));
+    resetButton.disabled = !canControlGame;
 
     if (state && playerId && state.players[playerId]) {
       playerEl.textContent = state.players[playerId].name;
       playerEl.style.color = state.players[playerId].color;
+      playerBox.style.setProperty("--card-accent", state.players[playerId].color);
       
       const currentLives = state.players[playerId].lives;
       livesEl.textContent = "❤️".repeat(currentLives) + "🖤".repeat(5 - currentLives);
       updateAmmoHud(state.players[playerId]);
     } else {
-      ammoEl.textContent = "-";
+      playerEl.style.removeProperty("color");
+      playerBox.style.removeProperty("--card-accent");
+      livesEl.textContent = "🖤🖤🖤🖤🖤";
+      ammoEl.textContent = "○○○○○";
+      ammoEl.setAttribute("aria-label", "Sin munición asignada");
     }
 
     if (state) {
       if (state.game_state === "menu") {
         menuOverlay.style.display = "flex";
         menuOverlay.innerHTML = `
-          <h2 style="margin: 0; font-size: 2.3rem; color: #f5c542; text-transform: uppercase;">Tank Wars</h2>
-          <p style="margin: 0; color: #a9b6ad; font-size: 0.9rem;">Esquiva los proyectiles, tienes 5 vidas!</p>
-          <button id="start-btn" style="background: #f5c542; color: #111312; border: none; padding: 12px 36px; font-size: 1rem; font-weight: 800; border-radius: 6px; cursor: pointer;">INICIAR PARTIDA</button>
+          <h2 class="overlay-title">Tank Wars</h2>
+          <p class="overlay-copy">Esquiva los proyectiles, tienes 5 vidas!</p>
+          <button id="start-btn" class="overlay-button">INICIAR PARTIDA</button>
         `;
         document.querySelector("#start-btn").addEventListener("click", () => push(topic, "start_game", {}));
-        timerEl.textContent = "60s";
+        timerEl.textContent = state.time_left + "s";
       } else if (state.game_state === "playing") {
         menuOverlay.style.display = "none";
+        timerEl.textContent = state.time_left + "s";
+      } else if (state.game_state === "paused") {
+        menuOverlay.style.display = "flex";
+        menuOverlay.innerHTML = `
+          <h2 class="overlay-title">PAUSA</h2>
+          <p class="overlay-copy">La partida está pausada para todos</p>
+        `;
         timerEl.textContent = state.time_left + "s";
       } else if (state.game_state === "game_over") {
         menuOverlay.style.display = "flex";
         menuOverlay.innerHTML = `
-          <h2 style="margin: 0; font-size: 2.5rem; color: #e5484d; text-transform: uppercase;">FIN DE LA PARTIDA</h2>
-          <p style="margin: 0; color: #a9b6ad;">Queda un solo tanque con vida o se acabó el tiempo</p>
-          <button id="reset-btn" style="background: #f1f5f2; color: #111312; border: none; padding: 12px 32px; font-size: 1rem; font-weight: 700; border-radius: 6px; cursor: pointer;">REINICIAR ARENA</button>
+          <h2 class="overlay-title overlay-title--danger">FIN DE LA PARTIDA</h2>
+          <p class="overlay-copy">Queda un solo tanque con vida o se acabó el tiempo</p>
+          <button id="reset-btn" class="overlay-button overlay-button--secondary">REINICIAR ARENA</button>
         `;
         document.querySelector("#reset-btn").addEventListener("click", () => push(topic, "reset", {}));
       }
@@ -113,26 +126,90 @@
   function showJoinError(message) {
     menuOverlay.style.display = "flex";
     menuOverlay.innerHTML = `
-      <h2 style="margin: 0; font-size: 2.1rem; color: #e5484d; text-transform: uppercase;">PARTIDA LLENA</h2>
-      <p style="margin: 0; color: #a9b6ad; font-size: 0.95rem; text-align: center;">${message || "Los tres jugadores ya estan ocupados."}</p>
+      <h2 class="overlay-title overlay-title--danger">PARTIDA LLENA</h2>
+      <p class="overlay-copy">${message || "Los tres jugadores ya estan ocupados."}</p>
     `;
   }
 
-  function countOwnedTerritory() {
-    if (!state || !playerId || !state.territory) return 0;
-    return Object.values(state.territory).filter(owner => owner === playerId).length;
+  function updateTerritoryLeaderboard() {
+    if (!state || !state.players || !state.territory) {
+      territoryLeaderboardEl.innerHTML = `<li class="territory-empty">Esperando jugadores</li>`;
+      lastLeaderboardSignature = "";
+      return;
+    }
+
+    const territoryCounts = Object.values(state.territory).reduce((counts, owner) => {
+      counts[owner] = (counts[owner] || 0) + 1;
+      return counts;
+    }, {});
+
+    const ranking = Object.values(state.players)
+      .map(player => ({
+        id: player.id,
+        name: player.name,
+        color: player.color,
+        count: territoryCounts[player.id] || 0
+      }))
+      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
+
+    const signature = JSON.stringify({ playerId, ranking });
+    if (signature === lastLeaderboardSignature) return;
+    lastLeaderboardSignature = signature;
+
+    const topCount = ranking.length > 0 ? ranking[0].count : 0;
+    const leaders = ranking.filter(entry => entry.count === topCount).length;
+
+    territoryLeaderboardEl.replaceChildren(...ranking.map(entry => {
+      const rank = ranking.findIndex(candidate => candidate.count === entry.count) + 1;
+
+      const row = document.createElement("li");
+      row.className = "territory-row";
+      if (entry.id === playerId) row.classList.add("is-self");
+      if (rank === 1) row.classList.add("is-leading");
+
+      const position = document.createElement("span");
+      position.className = "territory-rank";
+      position.textContent = String(rank);
+
+      const marker = document.createElement("span");
+      marker.className = "territory-marker";
+      marker.style.backgroundColor = entry.color;
+      marker.style.boxShadow = `0 0 7px ${entry.color}`;
+
+      const name = document.createElement("span");
+      name.className = "territory-name";
+      name.textContent = entry.id === playerId ? `${entry.name} (tú)` : entry.name;
+
+      const status = document.createElement("span");
+      status.className = "territory-status";
+      if (rank === 1) status.textContent = leaders === 1 ? "LÍDER" : "EMPATE";
+
+      const score = document.createElement("strong");
+      score.className = "territory-score";
+      score.textContent = `${entry.count} celdas`;
+
+      row.append(position, marker, name, status, score);
+      return row;
+    }));
   }
 
   function updateAmmoHud(player) {
     const maxAmmo = player.max_ammo || 5;
-    const ammo = Number.isFinite(player.ammo) ? player.ammo : maxAmmo;
+    const ammo = Number.isFinite(player.ammo)
+      ? Math.max(0, Math.min(maxAmmo, Math.trunc(player.ammo)))
+      : maxAmmo;
+    const bullets = "●".repeat(ammo) + "○".repeat(maxAmmo - ammo);
 
     if (ammo <= 0) {
-      ammoEl.textContent = "recargando";
-      ammoEl.style.color = "#e5484d";
+      ammoEl.textContent = `${bullets} ${player.reload_paused ? "⏸" : "↻"}`;
+      ammoEl.setAttribute("aria-label", player.reload_paused ? "Recarga pausada" : "Recargando");
+      ammoEl.style.color = COLORS.danger;
+      ammoEl.style.textShadow = "0 0 8px rgba(255, 49, 93, 0.55)";
     } else {
-      ammoEl.textContent = `${ammo}/${maxAmmo}`;
-      ammoEl.style.color = "#f5c542";
+      ammoEl.textContent = bullets;
+      ammoEl.setAttribute("aria-label", `${ammo} de ${maxAmmo} balas`);
+      ammoEl.style.color = COLORS.blue;
+      ammoEl.style.textShadow = "0 0 8px rgba(0, 140, 255, 0.5)";
     }
   }
 
@@ -290,7 +367,11 @@
   }
 
   function drawBackground(width, height) {
-    ctx.fillStyle = "#1f2a24";
+    const background = ctx.createLinearGradient(0, 0, width, height);
+    background.addColorStop(0, COLORS.arenaTop);
+    background.addColorStop(0.55, "#0c0a20");
+    background.addColorStop(1, COLORS.arenaBottom);
+    ctx.fillStyle = background;
     ctx.fillRect(0, 0, width, height);
   }
 
@@ -299,8 +380,48 @@
       const [x, y] = cell.split(",").map(Number);
       const player = state.players[owner];
       if (!player) return;
-      ctx.fillStyle = withAlpha(player.color, 0.25);
+      ctx.fillStyle = withAlpha(player.color, 0.22);
       ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+    });
+
+    Object.entries(state.territory).forEach(([cell, owner]) => {
+      const [x, y] = cell.split(",").map(Number);
+      const player = state.players[owner];
+      if (!player) return;
+
+      const xPos = x * cellW;
+      const yPos = y * cellH;
+      const neighbors = {
+        top: state.territory[`${x},${y - 1}`],
+        right: state.territory[`${x + 1},${y}`],
+        bottom: state.territory[`${x},${y + 1}`],
+        left: state.territory[`${x - 1},${y}`]
+      };
+
+      ctx.save();
+      ctx.beginPath();
+      if (neighbors.top !== owner) {
+        ctx.moveTo(xPos, yPos);
+        ctx.lineTo(xPos + cellW, yPos);
+      }
+      if (neighbors.right !== owner) {
+        ctx.moveTo(xPos + cellW, yPos);
+        ctx.lineTo(xPos + cellW, yPos + cellH);
+      }
+      if (neighbors.bottom !== owner) {
+        ctx.moveTo(xPos + cellW, yPos + cellH);
+        ctx.lineTo(xPos, yPos + cellH);
+      }
+      if (neighbors.left !== owner) {
+        ctx.moveTo(xPos, yPos + cellH);
+        ctx.lineTo(xPos, yPos);
+      }
+      ctx.strokeStyle = withAlpha(player.color, 0.85);
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = player.color;
+      ctx.shadowBlur = 6;
+      ctx.stroke();
+      ctx.restore();
     });
   }
 
@@ -312,17 +433,35 @@
       const yPos = y * cellH;
 
       if (obs.type === "muro_gris") {
-        ctx.fillStyle = "#3a473f";
-        ctx.strokeStyle = "#a9b6ad";
+        ctx.save();
+        const wallGradient = ctx.createLinearGradient(xPos, yPos, xPos + cellW, yPos + cellH);
+        wallGradient.addColorStop(0, COLORS.wallHighlight);
+        wallGradient.addColorStop(1, COLORS.wall);
+        ctx.fillStyle = wallGradient;
+        ctx.strokeStyle = COLORS.wallBorder;
         ctx.lineWidth = 1;
+        ctx.shadowColor = "rgba(0, 245, 255, 0.45)";
+        ctx.shadowBlur = 4;
         roundRect(ctx, xPos + 2, yPos + 2, cellW - 4, cellH - 4, 4);
         ctx.fill(); ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(0, 245, 255, 0.6)";
+        ctx.beginPath();
+        ctx.moveTo(xPos + 7, yPos + 4);
+        ctx.lineTo(xPos + cellW - 7, yPos + 4);
+        ctx.stroke();
+        ctx.restore();
       } else if (obs.type === "torre_vida") {
-        ctx.fillStyle = "#f5c542";
+        ctx.save();
+        ctx.fillStyle = COLORS.gold;
+        ctx.shadowColor = "rgba(249, 248, 113, 0.7)";
+        ctx.shadowBlur = 10;
         roundRect(ctx, xPos + 3, yPos + 3, cellW - 6, cellH - 6, 6);
         ctx.fill();
+        ctx.shadowBlur = 0;
 
-        ctx.fillStyle = "#111312"; 
+        ctx.fillStyle = COLORS.ink;
         
         // Ceja Izquierda Obstaculo
         ctx.beginPath();
@@ -340,16 +479,17 @@
         ctx.lineTo(xPos + cellW * 0.8, yPos + cellH * 0.3);
         ctx.closePath(); ctx.fill();
 
-        ctx.fillStyle = "#ff2a30";
+        ctx.fillStyle = "#ff1744";
         ctx.fillRect(xPos + cellW * 0.24, yPos + cellH * 0.42, cellW * 0.16, cellH * 0.14);
         ctx.fillRect(xPos + cellW * 0.60, yPos + cellH * 0.42, cellW * 0.16, cellH * 0.14);
 
-        ctx.fillStyle = "#111312";
+        ctx.fillStyle = COLORS.ink;
         ctx.fillRect(xPos + cellW * 0.30, yPos + cellH * 0.46, cellW * 0.08, cellH * 0.08);
         ctx.fillRect(xPos + cellW * 0.62, yPos + cellH * 0.46, cellW * 0.08, cellH * 0.08);
-        ctx.fillStyle = "#111312";
+        ctx.fillStyle = COLORS.ink;
         ctx.fillRect(xPos + cellW * 0.32, yPos + cellH * 0.70, cellW * 0.36, cellH * 0.12);
         drawTowerLifeIndicator(obs, xPos, yPos, cellW, cellH);
+        ctx.restore();
       }
     });
   }
@@ -358,23 +498,41 @@
     const maxLives = tower.max_lives || 6;
     const lives = Number.isFinite(tower.lives) ? tower.lives : maxLives;
     const ratio = Math.max(0, Math.min(1, lives / maxLives));
-    const barWidth = cellW * 0.58;
-    const barHeight = Math.max(3, cellH * 0.08);
+    const barWidth = cellW * 0.72;
+    const barHeight = Math.max(5, cellH * 0.13 - 1);
     const barX = xPos + (cellW - barWidth) / 2;
-    const barY = yPos + Math.max(2, cellH * 0.05);
+    const barY = yPos + Math.max(0, cellH * 0.025 - 2);
+    const framePadding = 2;
 
     ctx.save();
-    ctx.fillStyle = "rgba(17, 19, 18, 0.75)";
-    roundRect(ctx, barX, barY, barWidth, barHeight, 2);
+    ctx.fillStyle = "rgba(4, 8, 14, 0.96)";
+    roundRect(
+      ctx,
+      barX - framePadding,
+      barY - framePadding,
+      barWidth + framePadding * 2,
+      barHeight + framePadding * 2,
+      4
+    );
     ctx.fill();
 
-    ctx.fillStyle = ratio > 0.35 ? "#22c55e" : "#e5484d";
-    roundRect(ctx, barX, barY, barWidth * ratio, barHeight, 2);
+    ctx.fillStyle = ratio > 0.35 ? COLORS.towerHealth : COLORS.danger;
+    ctx.shadowColor = ratio > 0.35 ? COLORS.towerHealth : COLORS.danger;
+    ctx.shadowBlur = 8;
+    roundRect(ctx, barX, barY, barWidth * ratio, barHeight, 3);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(241, 245, 242, 0.75)";
-    ctx.lineWidth = 1;
-    roundRect(ctx, barX, barY, barWidth, barHeight, 2);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(244, 250, 255, 0.82)";
+    ctx.lineWidth = 1.5;
+    roundRect(
+      ctx,
+      barX - framePadding,
+      barY - framePadding,
+      barWidth + framePadding * 2,
+      barHeight + framePadding * 2,
+      4
+    );
     ctx.stroke();
     ctx.restore();
   }
@@ -382,15 +540,21 @@
   function drawProjectiles(cellW, cellH) {
     if (!state.projectiles) return;
     state.projectiles.forEach(p => {
-      ctx.fillStyle = "#ff4a4a"; 
+      ctx.save();
+      ctx.fillStyle = COLORS.danger;
+      ctx.shadowColor = COLORS.danger;
+      ctx.shadowBlur = 14;
       ctx.beginPath();
       ctx.arc(p.x * cellW, p.y * cellH, 6, 0, Math.PI * 2);
       ctx.fill();
       
-      ctx.fillStyle = "#f5c542";
+      ctx.shadowColor = COLORS.gold;
+      ctx.shadowBlur = 7;
+      ctx.fillStyle = COLORS.gold;
       ctx.beginPath();
       ctx.arc(p.x * cellW, p.y * cellH, 3, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     });
   }
 
@@ -405,8 +569,10 @@
 
       ctx.save();
       ctx.globalAlpha = Math.max(0, progress);
-      ctx.strokeStyle = effect.color || "#f1f5f2";
+      ctx.strokeStyle = effect.color || COLORS.text;
       ctx.lineWidth = 2;
+      ctx.shadowColor = effect.color || COLORS.cyan;
+      ctx.shadowBlur = 10;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -420,13 +586,16 @@
   }
 
   function drawGrid(width, height, cellW, cellH) {
-    ctx.strokeStyle = "rgba(241, 245, 242, 0.05)";
+    ctx.save();
+    ctx.strokeStyle = "rgba(0, 245, 255, 0.10)";
+    ctx.lineWidth = 0.75;
     for (let x = 0; x <= state.width; x++) {
       ctx.beginPath(); ctx.moveTo(x * cellW, 0); ctx.lineTo(x * cellW, height); ctx.stroke();
     }
     for (let y = 0; y <= state.height; y++) {
       ctx.beginPath(); ctx.moveTo(0, y * cellH); ctx.lineTo(width, y * cellH); ctx.stroke();
     }
+    ctx.restore();
   }
 
   function drawPlayers(cellW, cellH) {
@@ -442,13 +611,26 @@
 
       ctx.save();
       ctx.translate(cx, cy);
-      
-      ctx.fillStyle = player.hit_timer > 0 ? "#FFFFFF" : player.color;
-      ctx.strokeStyle = player.id === playerId ? "#ffffff" : "rgba(255,255,255,0.4)";
-      ctx.lineWidth = player.id === playerId ? 3 : 1.5;
 
+      ctx.fillStyle = player.hit_timer > 0 ? "#ffffff" : player.color;
+      ctx.shadowColor = player.color;
+      ctx.shadowBlur = player.id === playerId ? 14 : 9;
       roundRect(ctx, -size / 2, -size / 2, size, size, 6);
-      ctx.fill(); ctx.stroke();
+      ctx.fill();
+
+      if (player.id === playerId) {
+        ctx.strokeStyle = withAlpha(player.color, 0.95);
+        ctx.lineWidth = 6;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.52)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
 
       drawTankCannon(player, size);
       ctx.restore();
@@ -462,7 +644,8 @@
 
     ctx.save();
     ctx.rotate(angle);
-    ctx.fillStyle = "#111312";
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = COLORS.ink;
     roundRect(ctx, size * 0.02, -size * 0.11, size * 0.62, size * 0.22, 3);
     ctx.fill();
     ctx.restore();
@@ -472,14 +655,17 @@
     ctx.save();
     ctx.translate(cx, cy);
 
-    ctx.fillStyle = "#202420";
+    ctx.fillStyle = "#130f1d";
     ctx.strokeStyle = withAlpha(player.color, 0.55);
     ctx.lineWidth = 2;
+    ctx.shadowColor = player.color;
+    ctx.shadowBlur = 6;
     roundRect(ctx, -size / 2, -size / 2, size, size, 6);
     ctx.fill();
     ctx.stroke();
 
-    ctx.strokeStyle = "#e5484d";
+    ctx.shadowColor = COLORS.danger;
+    ctx.strokeStyle = COLORS.danger;
     ctx.lineWidth = Math.max(2, size * 0.08);
     ctx.beginPath();
     ctx.moveTo(-size * 0.28, -size * 0.28);
@@ -516,6 +702,12 @@
   window.addEventListener("keydown", handleKeydown);
   canvas.addEventListener("mousemove", handleCanvasMouseMove);
   canvas.addEventListener("mousedown", handleCanvasMouseDown);
+  pauseButton.addEventListener("click", () => push(topic, "toggle_pause", {}));
+  resetButton.addEventListener("click", () => {
+    if (window.confirm("¿Reiniciar la partida para todos los jugadores?")) {
+      push(topic, "reset", {});
+    }
+  });
   resizeCanvas();
   updateHud();
   connect();

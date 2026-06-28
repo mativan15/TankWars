@@ -14,22 +14,38 @@ defmodule TankWarsWeb.PageController do
       <body>
         <main class="shell">
           <section class="hud" aria-label="Estado de partida">
-            <div>
+            <div class="brand">
               <p class="eyebrow">Ivan Sardón - Diego Vasquez - Steffano Ballesteros</p>
               <h1>Tank Wars</h1>
             </div>
             <div class="status-grid">
-              <div>
-                <span>Conexión</span>
-                <strong id="connection">iniciando</strong>
+              <div id="pause-box" class="hud-action-box">
+                <button id="pause-btn" class="game-control" type="button" disabled>⏸ Pausar</button>
               </div>
-              <div>
+              <div id="reset-box" class="hud-action-box">
+                <button id="global-reset-btn" class="game-control game-control--danger" type="button" disabled>↻ Reiniciar</button>
+              </div>
+              <div id="timer-box">
+                <span>Tiempo</span>
+                <strong id="hud-timer">-</strong>
+              </div>
+              <div id="player-box">
                 <span>Jugador</span>
                 <strong id="player">sin asignar</strong>
               </div>
-              <div>
-                <span>Territorio</span>
-                <strong id="territory-count">0</strong>
+              <div id="lives-box">
+                <span>Vidas</span>
+                <strong id="hud-lives">❤️❤️❤️❤️❤️</strong>
+              </div>
+              <div id="ammo-box">
+                <span>Balas</span>
+                <strong id="hud-ammo" aria-label="5 de 5 balas">●●●●●</strong>
+              </div>
+              <div id="territory-box" aria-live="polite">
+                <span>Clasificación territorial</span>
+                <ol id="territory-leaderboard" class="territory-leaderboard">
+                  <li class="territory-empty">Esperando jugadores</li>
+                </ol>
               </div>
             </div>
           </section>

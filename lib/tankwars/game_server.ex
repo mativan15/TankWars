@@ -10,10 +10,15 @@ defmodule TankWars.GameServer do
   @width 24
   @height 14
   @tick_rate 100
-  @game_duration 60
+  @game_duration 200
   @projectile_speed 0.4
   @max_ammo 5
   @reload_duration_ms 1_800
+  @movement_idle_ms 180
+  # Velocidad relativa: propio 100%, sin capturar 70%, enemigo 45%.
+  @movement_scale 100
+  @unclaimed_speed_weight 60
+  @enemy_speed_weight 40
   @hit_effect_ticks 6
   @tower_max_lives 6
 
@@ -35,6 +40,7 @@ defmodule TankWars.GameServer do
     do: GenServer.call(@name, {:shoot_player, player_id, dx, dy})
 
   def start_game, do: GenServer.call(@name, :start_game)
+  def toggle_pause, do: GenServer.call(@name, :toggle_pause)
   def reset, do: GenServer.call(@name, :reset)
 
   @impl true
@@ -118,6 +124,38 @@ defmodule TankWars.GameServer do
   end
 
   @impl true
+  def handle_call(:toggle_pause, _from, %{game_state: :playing} = state) do
+    new_state = %{
+      state
+      | game_state: :paused,
+        paused_at: System.monotonic_time(:millisecond)
+    }
+
+    broadcast_state(new_state)
+    {:reply, public_state(new_state), new_state}
+  end
+
+  def handle_call(:toggle_pause, _from, %{game_state: :paused} = state) do
+    current_time = System.monotonic_time(:millisecond)
+    paused_duration = max(0, current_time - state.paused_at)
+
+    new_state =
+      state
+      |> shift_reload_deadlines(paused_duration)
+      |> Map.merge(%{
+        game_state: :playing,
+        paused_at: nil,
+        last_time_check: state.last_time_check + paused_duration
+      })
+
+    broadcast_state(new_state)
+    {:reply, public_state(new_state), new_state}
+  end
+
+  def handle_call(:toggle_pause, _from, state),
+    do: {:reply, public_state(state), state}
+
+  @impl true
   def handle_call(:reset, _from, state) do
     new_state = %{initial_state() | player_connections: player_connections(state)}
     broadcast_state(new_state)
@@ -169,6 +207,7 @@ defmodule TankWars.GameServer do
       broadcast_state(state)
       {:noreply, state}
     else
+      if state.game_state == :paused, do: schedule_tick()
       {:noreply, state}
     end
   end
@@ -182,12 +221,17 @@ defmodule TankWars.GameServer do
         y: 1,
         spawn_x: 1,
         spawn_y: 1,
-        color: "#e5484d",
+        color: "#FF315D",
         lives: 5,
         hit_timer: 0,
         ammo: @max_ammo,
         max_ammo: @max_ammo,
         reload_ends_at: nil,
+        reload_remaining_ms: @reload_duration_ms,
+        reload_paused: false,
+        moving_until: 0,
+        movement_terrain: nil,
+        movement_credit: 0,
         aim_dx: 1.0,
         aim_dy: 0.0
       },
@@ -198,12 +242,17 @@ defmodule TankWars.GameServer do
         y: 1,
         spawn_x: 23,
         spawn_y: 1,
-        color: "#3b82f6",
+        color: "#2979FF",
         lives: 5,
         hit_timer: 0,
         ammo: @max_ammo,
         max_ammo: @max_ammo,
         reload_ends_at: nil,
+        reload_remaining_ms: @reload_duration_ms,
+        reload_paused: false,
+        moving_until: 0,
+        movement_terrain: nil,
+        movement_credit: 0,
         aim_dx: -1.0,
         aim_dy: 0.0
       },
@@ -214,12 +263,17 @@ defmodule TankWars.GameServer do
         y: 13,
         spawn_x: 12,
         spawn_y: 13,
-        color: "#22c55e",
+        color: "#39FF88",
         lives: 5,
         hit_timer: 0,
         ammo: @max_ammo,
         max_ammo: @max_ammo,
         reload_ends_at: nil,
+        reload_remaining_ms: @reload_duration_ms,
+        reload_paused: false,
+        moving_until: 0,
+        movement_terrain: nil,
+        movement_credit: 0,
         aim_dx: 0.0,
         aim_dy: -1.0
       }
@@ -240,6 +294,7 @@ defmodule TankWars.GameServer do
       player_connections: %{},
       time_left: @game_duration,
       game_state: :menu,
+      paused_at: nil,
       last_time_check: 0
     }
 
@@ -299,14 +354,29 @@ defmodule TankWars.GameServer do
         ny = clamp(player.y + normalize_step(dy), 0, @height - 1)
         key = "#{nx},#{ny}"
 
-        if Map.has_key?(state.obstacles, key) do
+        if (nx == player.x and ny == player.y) or Map.has_key?(state.obstacles, key) do
           state
         else
-          state
-          |> put_in([:players, player_id, :x], nx)
-          |> put_in([:players, player_id, :y], ny)
-          |> Map.update!(:tick, &(&1 + 1))
-          |> put_in([:territory, key], player_id)
+          now = System.monotonic_time(:millisecond)
+          terrain = destination_terrain(state.territory, key, player_id)
+          {can_advance, player} = apply_movement_weight(player, terrain)
+
+          player =
+            player
+            |> Map.put(:moving_until, now + @movement_idle_ms)
+            |> pause_player_reload(now)
+
+          state = put_in(state, [:players, player_id], player)
+
+          if can_advance do
+            state
+            |> put_in([:players, player_id, :x], nx)
+            |> put_in([:players, player_id, :y], ny)
+            |> Map.update!(:tick, &(&1 + 1))
+            |> put_in([:territory, key], player_id)
+          else
+            state
+          end
         end
 
       :error ->
@@ -353,11 +423,14 @@ defmodule TankWars.GameServer do
             {nx, ny} ->
               now = System.monotonic_time(:millisecond)
               remaining_ammo = ammo - 1
+              reload_paused = remaining_ammo == 0 and player_moving?(player, now)
 
               reload_ends_at =
-                if remaining_ammo == 0,
-                  do: now + @reload_duration_ms,
-                  else: Map.get(player, :reload_ends_at)
+                cond do
+                  remaining_ammo > 0 -> Map.get(player, :reload_ends_at)
+                  reload_paused -> nil
+                  true -> now + @reload_duration_ms
+                end
 
               projectile = %{
                 x: player.x + 0.5,
@@ -372,6 +445,8 @@ defmodule TankWars.GameServer do
               |> put_in([:players, player_id, :ammo], remaining_ammo)
               |> put_in([:players, player_id, :max_ammo], @max_ammo)
               |> put_in([:players, player_id, :reload_ends_at], reload_ends_at)
+              |> put_in([:players, player_id, :reload_remaining_ms], @reload_duration_ms)
+              |> put_in([:players, player_id, :reload_paused], reload_paused)
               |> put_in([:players, player_id, :aim_dx], nx)
               |> put_in([:players, player_id, :aim_dy], ny)
               |> Map.update!(:projectiles, &[projectile | &1])
@@ -460,13 +535,101 @@ defmodule TankWars.GameServer do
   defp update_reloads(state, now) do
     players =
       Map.new(state.players, fn {id, player} ->
-        reload_ends_at = Map.get(player, :reload_ends_at)
+        {id, update_player_reload(player, now)}
+      end)
 
-        if reload_ends_at && now >= reload_ends_at do
-          {id, Map.merge(player, %{ammo: @max_ammo, max_ammo: @max_ammo, reload_ends_at: nil})}
-        else
-          {id, player}
+    %{state | players: players}
+  end
+
+  defp update_player_reload(player, now) do
+    ammo = Map.get(player, :ammo, @max_ammo)
+    reload_ends_at = Map.get(player, :reload_ends_at)
+
+    cond do
+      ammo > 0 ->
+        Map.put(player, :reload_paused, false)
+
+      player_moving?(player, now) ->
+        pause_player_reload(player, now)
+
+      reload_ends_at && now >= reload_ends_at ->
+        Map.merge(player, %{
+          ammo: @max_ammo,
+          max_ammo: @max_ammo,
+          reload_ends_at: nil,
+          reload_remaining_ms: @reload_duration_ms,
+          reload_paused: false
+        })
+
+      is_nil(reload_ends_at) ->
+        remaining = Map.get(player, :reload_remaining_ms, @reload_duration_ms)
+
+        player
+        |> Map.put(:reload_ends_at, now + remaining)
+        |> Map.put(:reload_paused, false)
+
+      true ->
+        Map.put(player, :reload_paused, false)
+    end
+  end
+
+  defp pause_player_reload(player, now) do
+    if Map.get(player, :ammo, @max_ammo) <= 0 do
+      remaining =
+        case Map.get(player, :reload_ends_at) do
+          nil -> Map.get(player, :reload_remaining_ms, @reload_duration_ms)
+          reload_ends_at -> max(0, reload_ends_at - now)
         end
+
+      player
+      |> Map.put(:reload_ends_at, nil)
+      |> Map.put(:reload_remaining_ms, remaining)
+      |> Map.put(:reload_paused, true)
+    else
+      player
+    end
+  end
+
+  defp player_moving?(player, now),
+    do: now < Map.get(player, :moving_until, 0)
+
+  defp destination_terrain(territory, key, player_id) do
+    case Map.get(territory, key) do
+      ^player_id -> :own
+      nil -> :unclaimed
+      _other_player -> :enemy
+    end
+  end
+
+  defp apply_movement_weight(player, :own) do
+    {true, Map.merge(player, %{movement_terrain: :own, movement_credit: 0})}
+  end
+
+  defp apply_movement_weight(player, terrain) do
+    if Map.get(player, :movement_terrain) != terrain do
+      {true, Map.merge(player, %{movement_terrain: terrain, movement_credit: 0})}
+    else
+      weight = if terrain == :enemy, do: @enemy_speed_weight, else: @unclaimed_speed_weight
+      credit = Map.get(player, :movement_credit, 0) + weight
+
+      if credit >= @movement_scale do
+        {true, Map.put(player, :movement_credit, credit - @movement_scale)}
+      else
+        {false, Map.put(player, :movement_credit, credit)}
+      end
+    end
+  end
+
+  defp shift_reload_deadlines(state, paused_duration) do
+    players =
+      Map.new(state.players, fn {id, player} ->
+        reload_ends_at =
+          case Map.get(player, :reload_ends_at) do
+            nil -> nil
+            timestamp -> timestamp + paused_duration
+          end
+
+        {id, Map.put(player, :reload_ends_at, reload_ends_at)}
       end)
 
     %{state | players: players}
@@ -516,6 +679,9 @@ defmodule TankWars.GameServer do
       player
       |> Map.put(:lives, lives)
       |> Map.put(:hit_timer, 0)
+      |> Map.put(:moving_until, 0)
+      |> Map.put(:movement_terrain, nil)
+      |> Map.put(:movement_credit, 0)
 
     player =
       if lives > 0 do

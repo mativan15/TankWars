@@ -1,12 +1,15 @@
 :root {
   color-scheme: dark;
-  --bg: #111312;
-  --panel: #1d2420;
-  --panel-2: #26312b;
-  --line: #3a473f;
-  --text: #f1f5f2;
-  --muted: #a9b6ad;
-  --accent: #f5c542;
+  --bg: #07040f;
+  --panel: #08111f;
+  --panel-2: #0c0718;
+  --line: #173a5e;
+  --text: #f4faff;
+  --muted: #9cb8ce;
+  --accent: #00f5ff;
+  --blue: #008cff;
+  --danger: #ff315d;
+  --gold: #f9f871;
 }
 
 * {
@@ -17,7 +20,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(245, 197, 66, 0.08), transparent 26rem),
+    radial-gradient(circle at 72% 0%, rgba(0, 140, 255, 0.14), transparent 32rem),
+    linear-gradient(180deg, rgba(0, 245, 255, 0.07), transparent 26rem),
     var(--bg);
   color: var(--text);
   font-family:
@@ -28,12 +32,12 @@ body {
 .shell {
   width: calc(100vw - 360px);
   margin: 0 auto;
-  padding: 26px 0;
+  padding: 20px 0;
 }
 
 .hud {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
   margin-bottom: 16px;
@@ -42,7 +46,7 @@ body {
 .eyebrow {
   margin: 0 0 4px;
   color: var(--accent);
-  font-size: 0.75rem;
+  font-size: 0.9rem;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -50,22 +54,124 @@ body {
 
 h1 {
   margin: 0;
-  font-size: clamp(1.9rem, 4vw, 3rem);
+  font-size: clamp(2.2rem, 4.5vw, 3.5rem);
   line-height: 1;
+  text-shadow:
+    0 0 10px rgba(0, 245, 255, 0.32),
+    0 0 24px rgba(0, 140, 255, 0.18);
+}
+
+.game-control {
+  flex: 1;
+  width: 100%;
+  min-height: 100%;
+  border: 0;
+  background: transparent;
+  padding: 8px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.game-control:hover:not(:disabled),
+.game-control.is-active {
+  background: rgba(0, 217, 255, 0.08);
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(0, 217, 255, 0.55);
+}
+
+.game-control--danger:hover:not(:disabled) {
+  background: rgba(255, 49, 93, 0.08);
+  color: var(--danger);
+  text-shadow: 0 0 8px rgba(255, 49, 93, 0.5);
+}
+
+.game-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(78px, 1fr));
+  grid-template-areas:
+    "pause timer lives leaderboard"
+    "reset player ammo leaderboard";
+  grid-template-columns:
+    minmax(88px, 0.8fr)
+    minmax(82px, 0.8fr)
+    minmax(120px, 1fr)
+    minmax(330px, 2.6fr);
+  grid-template-rows: repeat(2, minmax(48px, auto));
   gap: 8px;
   min-width: min(700px, 100%);
 }
 
 .status-grid div {
+  --card-accent: #00d9ff;
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
-  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(0, 140, 255, 0.06), transparent 48%), var(--panel);
+  padding: 8px 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 0 9px rgba(0, 217, 255, 0.08);
+}
+
+.status-grid div::before {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  left: 8px;
+  height: 2px;
+  border-radius: 0 0 3px 3px;
+  background: var(--card-accent);
+  box-shadow: 0 0 9px var(--card-accent);
+  content: "";
+}
+
+#timer-box {
+  --card-accent: #00f5ff;
+  grid-area: timer;
+}
+
+#lives-box {
+  --card-accent: #ff315d;
+  grid-area: lives;
+}
+
+#ammo-box {
+  --card-accent: #008cff;
+  grid-area: ammo;
+}
+
+#player-box {
+  --card-accent: #39ff88;
+  grid-area: player;
+}
+
+#pause-box {
+  --card-accent: #00f5ff;
+  grid-area: pause;
+}
+
+#reset-box {
+  --card-accent: #ff315d;
+  grid-area: reset;
+}
+
+.status-grid .hud-action-box {
+  display: flex;
+  padding: 0;
+}
+
+#territory-box {
+  --card-accent: #5aa7ff;
+  grid-area: leaderboard;
+  min-width: 330px;
 }
 
 .status-grid span {
@@ -86,12 +192,106 @@ h1 {
   white-space: nowrap;
 }
 
-.arena-wrap {
+#hud-timer {
+  color: #00f5ff;
+  text-shadow: 0 0 8px rgba(0, 245, 255, 0.5);
+}
+
+#hud-lives {
+  color: var(--danger);
+  font-size: clamp(0.78rem, 1.2vw, 1.1rem);
+}
+
+#hud-ammo {
+  color: var(--blue);
+  font-size: clamp(0.78rem, 1.1vw, 1rem);
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 8px rgba(0, 140, 255, 0.5);
+}
+
+.territory-leaderboard {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.territory-row {
+  display: grid;
+  grid-template-columns: 14px 8px minmax(80px, 1fr) minmax(70px, 1fr) minmax(76px, auto);
+  align-items: center;
+  column-gap: 9px;
+  row-gap: 3px;
+  min-width: 0;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.territory-row.is-self {
+  background: rgba(0, 217, 255, 0.08);
+}
+
+.territory-row span {
+  display: block;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.territory-rank {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.territory-marker {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.territory-name {
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.territory-status {
+  color: var(--gold);
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.territory-score {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.7rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.territory-empty {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.arena-wrap {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #00d9ff;
+  border-radius: 10px;
   background: var(--panel-2);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  box-shadow:
+    inset 0 0 0 1px rgba(41, 121, 255, 0.65),
+    0 0 11px rgba(0, 217, 255, 0.32),
+    0 0 30px rgba(41, 121, 255, 0.16),
+    0 20px 60px rgba(0, 0, 0, 0.55);
 }
 
 #arena {
@@ -101,10 +301,86 @@ h1 {
   cursor: crosshair;
 }
 
+#menu-overlay {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  background:
+    radial-gradient(circle at center, rgba(0, 140, 255, 0.12), transparent 42%),
+    rgba(4, 10, 20, 0.95);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  backdrop-filter: blur(2px);
+}
+
+.overlay-title {
+  margin: 0;
+  color: var(--accent);
+  font-size: 2.3rem;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 9px rgba(0, 245, 255, 0.7),
+    0 0 24px rgba(0, 140, 255, 0.35);
+}
+
+.overlay-title--danger {
+  color: var(--danger);
+  font-size: 2.5rem;
+  text-shadow:
+    0 0 9px rgba(255, 49, 93, 0.7),
+    0 0 24px rgba(255, 49, 93, 0.28);
+}
+
+.overlay-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.overlay-button {
+  border: 1px solid #6aeaff;
+  border-radius: 6px;
+  background: var(--blue);
+  padding: 12px 36px;
+  color: #fff;
+  box-shadow: 0 0 14px rgba(0, 140, 255, 0.45);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.overlay-button:hover,
+.overlay-button:focus-visible {
+  border-color: #fff;
+  background: #00d9ff;
+  box-shadow:
+    0 0 12px rgba(0, 245, 255, 0.7),
+    0 0 26px rgba(0, 140, 255, 0.4);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.overlay-button--secondary {
+  background: #00d9ff;
+  color: #04101a;
+}
+
 @media (max-width: 760px) {
   .shell {
     width: min(100vw - 8px, 1120px);
-    padding: 6px 0;
+    padding: 4px 0;
   }
 
   .hud {
@@ -114,22 +390,16 @@ h1 {
   }
 
   .status-grid {
-    grid-template-columns: 1fr;
+    grid-template-areas:
+      "pause timer lives"
+      "reset player ammo"
+      "leaderboard leaderboard leaderboard";
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: auto;
+    min-width: 0;
   }
-}
 
-.status-grid div#timer-box {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  padding: 10px 12px;
-}
-
-.status-grid div#timer-box,
-.status-grid div#lives-box,
-.status-grid div#ammo-box {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  padding: 10px 12px;
+  #territory-box {
+    min-width: 0;
+  }
 }

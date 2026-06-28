@@ -28,16 +28,20 @@ defmodule TankWarsWeb.GameChannel do
 
   @impl true
   def handle_in("start_game", _payload, socket) do
-    new_state = GameServer.start_game()
-    broadcast!(socket, "state", new_state)
+    GameServer.start_game()
+    {:reply, :ok, socket}
+  end
+
+  @impl true
+  def handle_in("toggle_pause", _payload, socket) do
+    GameServer.toggle_pause()
     {:reply, :ok, socket}
   end
 
   @impl true
   def handle_in("move_player", %{"dx" => dx, "dy" => dy}, socket) do
     player_id = socket.assigns.player_id
-    new_state = GameServer.move_player(player_id, dx, dy)
-    broadcast!(socket, "state", new_state)
+    GameServer.move_player(player_id, dx, dy)
     {:reply, :ok, socket}
   end
 
@@ -51,15 +55,13 @@ defmodule TankWarsWeb.GameChannel do
   @impl true
   def handle_in("shoot_player", %{"dx" => dx, "dy" => dy}, socket) do
     player_id = socket.assigns.player_id
-    new_state = GameServer.shoot_player(player_id, dx, dy)
-    broadcast!(socket, "state", new_state)
+    GameServer.shoot_player(player_id, dx, dy)
     {:reply, :ok, socket}
   end
 
   @impl true
   def handle_in("reset", _payload, socket) do
-    new_state = GameServer.reset()
-    broadcast!(socket, "state", new_state)
+    GameServer.reset()
     {:reply, :ok, socket}
   end
 end
