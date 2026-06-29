@@ -42,6 +42,35 @@
   let joinRejected = false;
   let joinError = "";
   let lastAimSentAt = 0;
+
+  
+
+  const menuMusic = new Audio("/sounds/inicio.mp3");
+  menuMusic.loop = true;
+  menuMusic.volume = 0.25;
+
+  const battleMusic = new Audio("/sounds/batalla.mp3");
+  battleMusic.loop = true;
+  battleMusic.volume = 0.30;
+
+  const finalMusic = new Audio("/sounds/final.mp3");
+  finalMusic.loop = false;
+  finalMusic.volume = 0.40;
+
+  let finalMusicStarted = false;
+
+  let menuMusicStarted = false;
+
+  function startMenuMusic() {
+    if (!menuMusicStarted && state && state.game_state === "menu") {
+      menuMusicStarted = true;
+      menuMusic.play().catch(() => {});
+    }
+  }
+
+  document.addEventListener("click", startMenuMusic);
+  document.addEventListener("keydown", startMenuMusic);
+
   let lastLeaderboardSignature = "";
   const aimSendIntervalMs = 50;
   const clientId = getClientId();
@@ -78,15 +107,67 @@
         menuOverlay.style.display = "flex";
         menuOverlay.innerHTML = `
           <h2 class="overlay-title">Tank Wars</h2>
-          <p class="overlay-copy">Esquiva los proyectiles, tienes 5 vidas!</p>
+          <p class="overlay-copy">Elige un modo de juego</p>
+
+          <button id="mode-time-btn" class="overlay-button">MODO CONTRARRELOJ</button>
+          <button id="mode-death-btn" class="overlay-button overlay-button--secondary">MUERTE SÚBITA</button>
+
+          <p class="overlay-copy">Modo actual: ${
+            state.game_mode === "sudden_death" ? "Muerte súbita" : "Contrarreloj"
+          }</p>
+
           <button id="start-btn" class="overlay-button">INICIAR PARTIDA</button>
         `;
-        document.querySelector("#start-btn").addEventListener("click", () => push(topic, "start_game", {}));
+        document.querySelector("#mode-time-btn").addEventListener("click", () => {
+          push(topic, "set_game_mode", { mode: "time_attack" });
+        });
+
+        document.querySelector("#mode-death-btn").addEventListener("click", () => {
+          push(topic, "set_game_mode", { mode: "sudden_death" });
+        });
+
+        battleMusic.pause();
+        finalMusic.pause();
+        finalMusicStarted = false;
+
+        startMenuMusic();
+
+        document.querySelector("#start-btn").addEventListener("click", async (event) => {
+          event.stopPropagation();
+
+          try {
+            menuMusic.currentTime = 0;
+            await menuMusic.play();
+
+            setTimeout(() => {
+              menuMusic.pause();
+              menuMusic.currentTime = 0;
+
+              battleMusic.currentTime = 0;
+              battleMusic.play().catch(() => {});
+
+              push(topic, "start_game", {});
+            }, 1200);
+          } catch (error) {
+            console.log("No se pudo reproducir música de menú:", error);
+
+            battleMusic.currentTime = 0;
+            battleMusic.play().catch(() => {});
+            push(topic, "start_game", {});
+          }
+        });
+
         timerEl.textContent = state.time_left + "s";
       } else if (state.game_state === "playing") {
         menuOverlay.style.display = "none";
         timerEl.textContent = state.time_left + "s";
-      } else if (state.game_state === "paused") {
+
+        menuMusic.pause();
+
+        if (battleMusic.paused) {
+          battleMusic.play().catch(() => {});
+        }
+      }else if (state.game_state === "paused") {
         menuOverlay.style.display = "flex";
         menuOverlay.innerHTML = `
           <h2 class="overlay-title">PAUSA</h2>
@@ -94,14 +175,33 @@
         `;
         timerEl.textContent = state.time_left + "s";
       } else if (state.game_state === "game_over") {
-        menuOverlay.style.display = "flex";
-        menuOverlay.innerHTML = `
-          <h2 class="overlay-title overlay-title--danger">FIN DE LA PARTIDA</h2>
-          <p class="overlay-copy">Queda un solo tanque con vida o se acabó el tiempo</p>
-          <button id="reset-btn" class="overlay-button overlay-button--secondary">REINICIAR ARENA</button>
-        `;
-        document.querySelector("#reset-btn").addEventListener("click", () => push(topic, "reset", {}));
-      }
+          menuMusic.pause();
+          battleMusic.pause();
+
+          if (!finalMusicStarted) {
+            finalMusicStarted = true;
+            finalMusic.currentTime = 0;
+            finalMusic.play().catch(() => {});
+          }
+
+          const summary = buildGameSummary();
+
+          menuOverlay.style.display = "flex";
+          menuOverlay.innerHTML = `
+            <h2 class="overlay-title overlay-title--danger">FIN DE LA PARTIDA</h2>
+            <p class="overlay-copy">Puntajes finales</p>
+            ${summary}
+            <button id="reset-btn" class="overlay-button overlay-button--secondary">REINICIAR ARENA</button>
+          `;
+
+          document.querySelector("#reset-btn").addEventListener("click", () => {
+            finalMusic.pause();
+            finalMusic.currentTime = 0;
+            finalMusicStarted = false;
+            menuMusicStarted = false;
+            push(topic, "reset", {});
+          });
+        }
     }
 
     if (joinRejected) showJoinError(joinError);
@@ -192,6 +292,51 @@
       return row;
     }));
   }
+
+  function buildGameSummary() {
+  const modeName = state.game_mode === "sudden_death"
+    ? "Muerte súbita"
+    : "Contrarreloj";
+
+  const territoryCounts = Object.values(state.territory).reduce((counts, owner) => {
+    counts[owner] = (counts[owner] || 0) + 1;
+    return counts;
+  }, {});
+
+  const ranking = Object.values(state.players)
+    .map(player => ({
+      name: player.name,
+      color: player.color,
+      lives: player.lives,
+      territory: territoryCounts[player.id] || 0
+    }))
+    .sort((a, b) => {
+      if (state.game_mode === "sudden_death") {
+        return b.lives - a.lives || b.territory - a.territory;
+      }
+
+      return b.territory - a.territory || b.lives - a.lives;
+    });
+
+  return `
+    <p class="overlay-copy">Modo: ${modeName}</p>
+
+    <div class="final-summary">
+      ${ranking.map((p, i) => `
+        <div class="summary-row">
+          <strong style="color:${p.color}">
+          ${i === 0 ? "🏆 Ganaste, quedaste en primer lugar!!!" : ""}
+          ${i === 1 ? "🥈 Quedaste en segundo lugar" : ""}
+          ${i === 2 ? "🥉 Quedaste en tercer lugar" : ""}
+        </strong>
+        <strong style="color:${p.color}">#${i + 1} ${p.name}</strong>
+          <span>Territorio: ${p.territory} celdas</span>
+          <span>Vidas: ${p.lives}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
 
   function updateAmmoHud(player) {
     const maxAmmo = player.max_ammo || 5;
@@ -360,6 +505,7 @@
 
     drawTerritory(cellW, cellH);
     drawObstacles(cellW, cellH);
+    drawPowerups(cellW, cellH);
     drawProjectiles(cellW, cellH);
     drawGrid(rect.width, rect.height, cellW, cellH);
     drawHitEffects(cellW, cellH);
@@ -452,7 +598,85 @@
         ctx.lineTo(xPos + cellW - 7, yPos + 4);
         ctx.stroke();
         ctx.restore();
-      } else if (obs.type === "torre_vida") {
+      }else if (obs.type === "muro_pincho") {
+        ctx.save();
+        ctx.fillStyle = "#4a0b0b";
+        ctx.strokeStyle = "#ff3131";
+        ctx.lineWidth = 2;
+        roundRect(ctx, xPos + 2, yPos + 2, cellW - 4, cellH - 4, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "#ff3131";
+        ctx.beginPath();
+        ctx.moveTo(xPos + cellW * 0.5, yPos + cellH * 0.15);
+        ctx.lineTo(xPos + cellW * 0.8, yPos + cellH * 0.8);
+        ctx.lineTo(xPos + cellW * 0.2, yPos + cellH * 0.8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }else if (obs.type === "boss_rojo") {
+        ctx.save();
+
+        // Cuerpo rojo, igual al obstáculo amarillo
+        ctx.fillStyle = "#ff3b3b";
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 3;
+        ctx.shadowColor = "#ff0000";
+        ctx.shadowBlur = 10;
+
+        roundRect(ctx, xPos + 4, yPos + 4, cellW - 8, cellH - 8, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        // Barra de vida
+        const maxLives = obs.max_lives || 12;
+        const lives = obs.lives || maxLives;
+        const ratio = Math.max(0, Math.min(1, lives / maxLives));
+
+        ctx.fillStyle = "#000000";
+        roundRect(ctx, xPos + 6, yPos + 5, cellW - 12, 7, 4);
+        ctx.fill();
+
+        ctx.fillStyle = "#00ff66";
+        roundRect(ctx, xPos + 7, yPos + 6, (cellW - 14) * ratio, 5, 3);
+        ctx.fill();
+
+        // Cejas
+        ctx.fillStyle = "#000000";
+
+        ctx.beginPath();
+        ctx.moveTo(xPos + cellW * 0.2, yPos + cellH * 0.28);
+        ctx.lineTo(xPos + cellW * 0.45, yPos + cellH * 0.40);
+        ctx.lineTo(xPos + cellW * 0.45, yPos + cellH * 0.50);
+        ctx.lineTo(xPos + cellW * 0.2, yPos + cellH * 0.38);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(xPos + cellW * 0.8, yPos + cellH * 0.28);
+        ctx.lineTo(xPos + cellW * 0.55, yPos + cellH * 0.40);
+        ctx.lineTo(xPos + cellW * 0.55, yPos + cellH * 0.50);
+        ctx.lineTo(xPos + cellW * 0.8, yPos + cellH * 0.38);
+        ctx.closePath();
+        ctx.fill();
+
+        // Ojos blancos sin punto rojo
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(xPos + cellW * 0.25, yPos + cellH * 0.42, cellW * 0.16, cellH * 0.14);
+        ctx.fillRect(xPos + cellW * 0.60, yPos + cellH * 0.42, cellW * 0.16, cellH * 0.14);
+
+        // Pupilas negras
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(xPos + cellW * 0.31, yPos + cellH * 0.46, cellW * 0.07, cellH * 0.07);
+        ctx.fillRect(xPos + cellW * 0.63, yPos + cellH * 0.46, cellW * 0.07, cellH * 0.07);
+
+        // Boca
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(xPos + cellW * 0.30, yPos + cellH * 0.70, cellW * 0.40, cellH * 0.12);
+
+        ctx.restore();
+      }else if (obs.type === "torre_vida") {
         ctx.save();
         ctx.fillStyle = COLORS.gold;
         ctx.shadowColor = "rgba(249, 248, 113, 0.7)";
@@ -491,6 +715,37 @@
         drawTowerLifeIndicator(obs, xPos, yPos, cellW, cellH);
         ctx.restore();
       }
+    });
+  }
+
+  function drawPowerups(cellW, cellH) {
+    if (!state.powerups) return;
+
+    state.powerups.forEach(p => {
+      const xPos = p.x * cellW;
+      const yPos = p.y * cellH;
+
+      ctx.save();
+      ctx.font = `${Math.floor(Math.min(cellW, cellH) * 0.65)}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowBlur = 12;
+
+      let icon = "❓";
+
+      if (p.type === "life") {
+        icon = "❤️";
+        ctx.shadowColor = "#ff315d";
+      } else if (p.type === "shield") {
+        icon = "🛡️";
+        ctx.shadowColor = "#00f5ff";
+      } else if (p.type === "speed") {
+        icon = "⚡";
+        ctx.shadowColor = "#f9f871";
+      }
+
+      ctx.fillText(icon, xPos + cellW / 2, yPos + cellH / 2);
+      ctx.restore();
     });
   }
 
@@ -611,6 +866,12 @@
 
       ctx.save();
       ctx.translate(cx, cy);
+      if (player.shield_timer && player.shield_timer > 0) {
+        drawShieldBarrier(player, size);
+      }
+      if (player.speed_timer && player.speed_timer > 0) {
+        drawSpeedEffect(player, size);
+      }
 
       ctx.fillStyle = player.hit_timer > 0 ? "#ffffff" : player.color;
       ctx.shadowColor = player.color;
@@ -633,8 +894,85 @@
       }
 
       drawTankCannon(player, size);
+      if (player.life_effect_timer && player.life_effect_timer > 0) {
+        drawLifeEffect(player, size);
+      }
       ctx.restore();
     });
+  }
+
+  function drawShieldBarrier(player, size) {
+    const time = performance.now() / 200;
+    const pulse = Math.sin(time) * 0.08 + 1;
+    const radius = size * 0.85 * pulse;
+
+    ctx.save();
+
+    ctx.strokeStyle = "rgba(0, 245, 255, 0.9)";
+    ctx.fillStyle = "rgba(0, 245, 255, 0.12)";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = "#00f5ff";
+    ctx.shadowBlur = 18;
+
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.75, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawSpeedEffect(player, size) {
+    const time = performance.now() / 100;
+    const radius = size * 0.85;
+
+    ctx.save();
+
+    ctx.strokeStyle = "rgba(249, 248, 113, 0.95)";
+    ctx.fillStyle = "rgba(249, 248, 113, 0.10)";
+    ctx.lineWidth = 2;
+    ctx.shadowColor = "#f9f871";
+    ctx.shadowBlur = 18;
+
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 6; i++) {
+      const angle = time + i * Math.PI / 3;
+      const x1 = Math.cos(angle) * radius * 0.9;
+      const y1 = Math.sin(angle) * radius * 0.9;
+      const x2 = Math.cos(angle + 0.25) * radius * 1.25;
+      const y2 = Math.sin(angle + 0.25) * radius * 1.25;
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawLifeEffect(player, size) {
+    const progress = player.life_effect_timer / 25;
+    const yOffset = -size * (1.1 + (1 - progress) * 0.8);
+
+    ctx.save();
+    ctx.font = `${Math.floor(size * 0.55)}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.globalAlpha = progress;
+    ctx.shadowColor = "#ff315d";
+    ctx.shadowBlur = 12;
+    ctx.fillText("❤️", 0, yOffset);
+    ctx.restore();
   }
 
   function drawTankCannon(player, size) {

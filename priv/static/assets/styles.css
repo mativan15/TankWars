@@ -403,3 +403,63 @@ h1 {
     min-width: 0;
   }
 }
+
+.game-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 24px;
+  align-items: start;
+}
+
+.powerups-panel {
+  padding: 20px 16px;
+  border: 1px solid rgba(0, 245, 255, 0.85);
+  border-radius: 14px;
+  background: rgba(3, 12, 24, 0.82);
+  box-shadow: 0 0 16px rgba(0, 245, 255, 0.25);
+}
+
+.powerups-panel h2 {
+  text-align: center;
+  color: #00f5ff;
+}
+
+.powerup-card {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: rgba(4, 10, 24, 0.82);
+}
+
+.powerup-icon {
+  font-size: 2.6rem;
+  text-align: center;
+}
+
+.powerup-card h3 {
+  margin: 0 0 6px;
+}
+
+.powerup-card p {
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.powerup-shield {
+  border: 1px solid #00aaff;
+  color: #40bfff;
+}
+
+.powerup-speed {
+  border: 1px solid #f9d71c;
+  color: #f9d71c;
+}
+
+.powerup-life {
+  border: 1px solid #ff315d;
+  color: #ff315d;
+}

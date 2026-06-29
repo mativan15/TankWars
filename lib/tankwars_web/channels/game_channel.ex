@@ -64,4 +64,9 @@ defmodule TankWarsWeb.GameChannel do
     GameServer.reset()
     {:reply, :ok, socket}
   end
+
+  def handle_in("set_game_mode", %{"mode" => mode}, socket) do
+    state = TankWars.GameServer.set_game_mode(mode)
+    {:reply, {:ok, state}, socket}
+  end
 end

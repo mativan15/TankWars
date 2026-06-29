@@ -50,8 +50,38 @@ defmodule TankWarsWeb.PageController do
             </div>
           </section>
 
-          <section class="arena-wrap" aria-label="Arena">
-            <canvas id="arena" width="1200" height="800"></canvas>
+          <section class="game-area">
+            <section class="arena-wrap" aria-label="Arena">
+              <canvas id="arena" width="1200" height="800"></canvas>
+            </section>
+
+            <aside class="powerups-panel">
+              <h2>Power Ups</h2>
+
+              <div class="powerup-card powerup-shield">
+                <div class="powerup-icon">💠</div>
+                <div>
+                  <h3>Escudo</h3>
+                  <p>Te protege de recibir daño durante 10 segundos.</p>
+                </div>
+              </div>
+
+              <div class="powerup-card powerup-speed">
+                <div class="powerup-icon">⚡</div>
+                <div>
+                  <h3>Velocidad</h3>
+                  <p>Aumenta la velocidad de tu tanque durante 10 segundos.</p>
+                </div>
+              </div>
+
+              <div class="powerup-card powerup-life">
+                <div class="powerup-icon">❤️</div>
+                <div>
+                  <h3>Vida</h3>
+                  <p>Recupera 1 vida hasta un máximo de 5.</p>
+                </div>
+              </div>
+            </aside>
           </section>
         </main>
         <script src="/assets/app.js"></script>
