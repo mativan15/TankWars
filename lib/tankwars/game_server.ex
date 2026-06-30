@@ -10,69 +10,71 @@ defmodule TankWars.GameServer do
   @width 24
   @height 14
   @tick_rate 100
-  @game_duration 200
-  @projectile_speed 0.4
-  @max_ammo 5
-  @reload_duration_ms 1_800
-  @movement_idle_ms 180
+  @duracion_partida 200
+  @velocidad_proyectil 0.4
+  @municion_maxima 5
+  @duracion_recarga_ms 1_800
+  @umbral_reposo_ms 180
   # Velocidad relativa: propio 100%, sin capturar 70%, enemigo 45%.
-  @movement_scale 100
-  @unclaimed_speed_weight 60
-  @enemy_speed_weight 40
-  @hit_effect_ticks 6
-  @tower_max_lives 6
+  @escala_movimiento 100
+  @velocidad_sin_capturar 60
+  @velocidad_enemigo 40
+  @pulsos_efecto_impacto 6
+  @vidas_maximas_torre 6
 
-  @danger_phase_time 120
-  @boss_max_lives 12
-  @spike_wall_ratio 0.20
+  @tiempo_fase_peligro 120
+  @vidas_maximas_jefe 12
+  @proporcion_muros_pinchos 0.20
 
-  @boss_shoot_delay_ticks 30
-  @boss_projectile_speed 0.4
+  @espera_disparo_jefe_pulsos 30
+  @velocidad_proyectil_jefe 0.4
 
   # power-up
-  @powerup_spawn_ticks 30
-  @shield_duration_ticks 50
+  @pulsos_potenciador 30
+  @duracion_escudo 50
 
   # API
   def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: @name)
-  def current_state, do: GenServer.call(@name, :current_state)
+  def estado_actual, do: GenServer.call(@name, :estado_actual)
 
-  def join_player(name \\ "Jugador", client_id \\ nil, connection_id \\ nil),
-    do: GenServer.call(@name, {:join_player, name, client_id, connection_id})
+  def registrar_jugador(name \\ "Jugador", client_id \\ nil, connection_id \\ nil),
+    do: GenServer.call(@name, {:registrar_jugador, name, client_id, connection_id})
 
-  def leave_player(player_id, connection_id),
-    do: GenServer.cast(@name, {:leave_player, player_id, connection_id})
+  def desconectar_jugador(player_id, connection_id),
+    do: GenServer.cast(@name, {:desconectar_jugador, player_id, connection_id})
 
-  def move_player(player_id, dx, dy), do: GenServer.call(@name, {:move_player, player_id, dx, dy})
+  def mover_jugador(player_id, dx, dy),
+    do: GenServer.call(@name, {:mover_jugador, player_id, dx, dy})
 
-  def aim_player(player_id, dx, dy), do: GenServer.call(@name, {:aim_player, player_id, dx, dy})
+  def apuntar_jugador(player_id, dx, dy),
+    do: GenServer.call(@name, {:apuntar_jugador, player_id, dx, dy})
 
-  def shoot_player(player_id, dx, dy),
-    do: GenServer.call(@name, {:shoot_player, player_id, dx, dy})
+  def disparar_jugador(player_id, dx, dy),
+    do: GenServer.call(@name, {:disparar_jugador, player_id, dx, dy})
 
   def start_game(mode \\ nil), do: GenServer.call(@name, {:start_game, mode})
-  def set_game_mode(mode), do: GenServer.call(@name, {:set_game_mode, mode})
-  def toggle_pause, do: GenServer.call(@name, :toggle_pause)
+  def establecer_modo_juego(mode), do: GenServer.call(@name, {:establecer_modo_juego, mode})
+  def pausa, do: GenServer.call(@name, :pausa)
   def reset, do: GenServer.call(@name, :reset)
 
   @impl true
-  def init(:ok), do: {:ok, initial_state()}
+  def init(:ok), do: {:ok, estado_inicial()}
 
   @impl true
-  def handle_call(:current_state, _from, state), do: {:reply, public_state(state), state}
+  def handle_call(:estado_actual, _from, state), do: {:reply, estado_publico(state), state}
 
   @impl true
-  def handle_call({:join_player, name, client_id, connection_id}, _from, state) do
+  def handle_call({:registrar_jugador, name, client_id, connection_id}, _from, state) do
     client_key = client_key(client_id, connection_id)
 
-    case reserved_player_for_client(state, client_key) || available_player_id(state) do
+    case jugador_reservado_cliente(state, client_key) || id_jugador_disponible(state) do
       nil ->
-        {:reply, {:error, :game_full, public_state(state)}, state}
+        {:reply, {:error, :game_full, estado_publico(state)}, state}
 
       player_id ->
         connections =
           state
-          |> player_connections()
+          |> conexiones_jugadores()
           |> Map.put(player_id, %{client_id: client_key, connection_id: connection_id})
 
         new_state =
@@ -81,12 +83,12 @@ defmodule TankWars.GameServer do
           |> Map.put(:player_connections, connections)
 
         broadcast_state(new_state)
-        {:reply, {:ok, %{player_id: player_id, state: public_state(new_state)}}, new_state}
+        {:reply, {:ok, %{player_id: player_id, state: estado_publico(new_state)}}, new_state}
     end
   end
 
   @impl true
-  def handle_call({:set_game_mode, mode}, _from, state) do
+  def handle_call({:establecer_modo_juego, mode}, _from, state) do
     new_mode =
       case mode do
         "sudden_death" -> :sudden_death
@@ -97,39 +99,39 @@ defmodule TankWars.GameServer do
     new_state = Map.put(state, :game_mode, new_mode)
 
     broadcast_state(new_state)
-    {:reply, public_state(new_state), new_state}
+    {:reply, estado_publico(new_state), new_state}
   end
 
   @impl true
-  def handle_call({:move_player, player_id, dx, dy}, _from, state) do
+  def handle_call({:mover_jugador, player_id, dx, dy}, _from, state) do
     if state.game_state == :playing do
-      new_state = apply_move(state, player_id, dx, dy)
+      new_state = aplicar_movimiento(state, player_id, dx, dy)
       broadcast_state(new_state)
-      {:reply, public_state(new_state), new_state}
+      {:reply, estado_publico(new_state), new_state}
     else
-      {:reply, public_state(state), state}
+      {:reply, estado_publico(state), state}
     end
   end
 
   @impl true
-  def handle_call({:aim_player, player_id, dx, dy}, _from, state) do
+  def handle_call({:apuntar_jugador, player_id, dx, dy}, _from, state) do
     if state.game_state == :playing do
-      new_state = apply_aim(state, player_id, dx, dy)
+      new_state = aplicar_apuntado(state, player_id, dx, dy)
       broadcast_state(new_state)
-      {:reply, public_state(new_state), new_state}
+      {:reply, estado_publico(new_state), new_state}
     else
-      {:reply, public_state(state), state}
+      {:reply, estado_publico(state), state}
     end
   end
 
   @impl true
-  def handle_call({:shoot_player, player_id, dx, dy}, _from, state) do
+  def handle_call({:disparar_jugador, player_id, dx, dy}, _from, state) do
     if state.game_state == :playing do
-      new_state = apply_player_shot(state, player_id, dx, dy)
+      new_state = aplicar_disparo_jugador(state, player_id, dx, dy)
       broadcast_state(new_state)
-      {:reply, public_state(new_state), new_state}
+      {:reply, estado_publico(new_state), new_state}
     else
-      {:reply, public_state(state), state}
+      {:reply, estado_publico(state), state}
     end
   end
 
@@ -152,16 +154,16 @@ defmodule TankWars.GameServer do
           last_time_check: System.monotonic_time(:millisecond)
       }
 
-      schedule_tick()
+      programar_pulso()
       broadcast_state(new_state)
-      {:reply, public_state(new_state), new_state}
+      {:reply, estado_publico(new_state), new_state}
     else
-      {:reply, public_state(state), state}
+      {:reply, estado_publico(state), state}
     end
   end
 
   @impl true
-  def handle_call(:toggle_pause, _from, %{game_state: :playing} = state) do
+  def handle_call(:pausa, _from, %{game_state: :playing} = state) do
     new_state = %{
       state
       | game_state: :paused,
@@ -169,16 +171,16 @@ defmodule TankWars.GameServer do
     }
 
     broadcast_state(new_state)
-    {:reply, public_state(new_state), new_state}
+    {:reply, estado_publico(new_state), new_state}
   end
 
-  def handle_call(:toggle_pause, _from, %{game_state: :paused} = state) do
+  def handle_call(:pausa, _from, %{game_state: :paused} = state) do
     current_time = System.monotonic_time(:millisecond)
     paused_duration = max(0, current_time - state.paused_at)
 
     new_state =
       state
-      |> shift_reload_deadlines(paused_duration)
+      |> ajustar_fin_recargas(paused_duration)
       |> Map.merge(%{
         game_state: :playing,
         paused_at: nil,
@@ -186,22 +188,22 @@ defmodule TankWars.GameServer do
       })
 
     broadcast_state(new_state)
-    {:reply, public_state(new_state), new_state}
+    {:reply, estado_publico(new_state), new_state}
   end
 
-  def handle_call(:toggle_pause, _from, state),
-    do: {:reply, public_state(state), state}
+  def handle_call(:pausa, _from, state),
+    do: {:reply, estado_publico(state), state}
 
   @impl true
   def handle_call(:reset, _from, state) do
-    new_state = %{initial_state() | player_connections: player_connections(state)}
+    new_state = %{estado_inicial() | player_connections: conexiones_jugadores(state)}
     broadcast_state(new_state)
-    {:reply, public_state(new_state), new_state}
+    {:reply, estado_publico(new_state), new_state}
   end
 
   @impl true
-  def handle_cast({:leave_player, player_id, connection_id}, state) do
-    connections = player_connections(state)
+  def handle_cast({:desconectar_jugador, player_id, connection_id}, state) do
+    connections = conexiones_jugadores(state)
 
     new_connections =
       case Map.get(connections, player_id) do
@@ -228,32 +230,32 @@ defmodule TankWars.GameServer do
 
       # BUGFIX CLAVE: Re-inyectar las transformaciones de estado acumulativas
       state = %{state | time_left: time_left, last_time_check: last_time}
-      state = update_reloads(state, current_time)
-      state = spawn_tower_projectiles(state)
-      state = spawn_boss_projectiles(state)
-      state = update_projectiles(state)
-      state = update_hit_animations(state)
-      state = update_powerups(state)
-      state = update_player_effects(state)
-      state = activate_danger_phase(state)
+      state = actualizar_recargas(state, current_time)
+      state = generar_proyectiles_torres(state)
+      state = generar_proyectiles_jefe(state)
+      state = actualizar_proyectiles(state)
+      state = actualizar_animaciones_impacto(state)
+      state = actualizar_potenciadores(state)
+      state = actualizar_efectos_jugadores(state)
+      state = activar_fase_peligro(state)
 
       state =
-        if game_over?(state) do
+        if partida_terminada?(state) do
           %{state | game_state: :game_over}
         else
-          schedule_tick()
+          programar_pulso()
           state
         end
 
       broadcast_state(state)
       {:noreply, state}
     else
-      if state.game_state == :paused, do: schedule_tick()
+      if state.game_state == :paused, do: programar_pulso()
       {:noreply, state}
     end
   end
 
-  def initial_state do
+  def estado_inicial do
     players = %{
       "p1" => %{
         id: "p1",
@@ -265,10 +267,10 @@ defmodule TankWars.GameServer do
         color: "#FF315D",
         lives: 5,
         hit_timer: 0,
-        ammo: @max_ammo,
-        max_ammo: @max_ammo,
+        ammo: @municion_maxima,
+        max_ammo: @municion_maxima,
         reload_ends_at: nil,
-        reload_remaining_ms: @reload_duration_ms,
+        reload_remaining_ms: @duracion_recarga_ms,
         reload_paused: false,
         moving_until: 0,
         movement_terrain: nil,
@@ -286,10 +288,10 @@ defmodule TankWars.GameServer do
         color: "#2979FF",
         lives: 5,
         hit_timer: 0,
-        ammo: @max_ammo,
-        max_ammo: @max_ammo,
+        ammo: @municion_maxima,
+        max_ammo: @municion_maxima,
         reload_ends_at: nil,
-        reload_remaining_ms: @reload_duration_ms,
+        reload_remaining_ms: @duracion_recarga_ms,
         reload_paused: false,
         moving_until: 0,
         movement_terrain: nil,
@@ -307,10 +309,10 @@ defmodule TankWars.GameServer do
         color: "#39FF88",
         lives: 5,
         hit_timer: 0,
-        ammo: @max_ammo,
-        max_ammo: @max_ammo,
+        ammo: @municion_maxima,
+        max_ammo: @municion_maxima,
         reload_ends_at: nil,
-        reload_remaining_ms: @reload_duration_ms,
+        reload_remaining_ms: @duracion_recarga_ms,
         reload_paused: false,
         moving_until: 0,
         movement_terrain: nil,
@@ -332,10 +334,10 @@ defmodule TankWars.GameServer do
       projectiles: [],
       hit_effects: [],
       powerups: [],
-      powerup_timer: @powerup_spawn_ticks,
+      powerup_timer: @pulsos_potenciador,
       next_player_index: 0,
       player_connections: %{},
-      time_left: @game_duration,
+      time_left: @duracion_partida,
       game_state: :menu,
       game_mode: :time_attack,
       paused_at: nil,
@@ -344,42 +346,43 @@ defmodule TankWars.GameServer do
       spikes_activated: false
     }
 
-    generate_initial_map(state_init)
+    generar_mapa_inicial(state_init)
   end
 
-  defp generate_initial_map(state) do
-    state = spawn_random_tower(state)
-    state = spawn_random_tower(state)
-    state = spawn_random_tower(state)
-    state = spawn_random_tower(state)
-    Enum.reduce(1..11, state, fn _, acc -> spawn_cobertura_muro(acc) end)
+  defp generar_mapa_inicial(state) do
+    state = generar_torre_aleatoria(state)
+    state = generar_torre_aleatoria(state)
+    state = generar_torre_aleatoria(state)
+    state = generar_torre_aleatoria(state)
+    Enum.reduce(1..11, state, fn _, acc -> generar_muro_cobertura(acc) end)
   end
 
-  defp activate_danger_phase(state) do
-    if state.time_left <= @danger_phase_time and not Map.get(state, :danger_phase_started, false) do
+  defp activar_fase_peligro(state) do
+    if state.time_left <= @tiempo_fase_peligro and
+         not Map.get(state, :danger_phase_started, false) do
       state
       |> Map.put(:danger_phase_started, true)
-      |> spawn_red_boss()
-      |> activate_spike_walls()
+      |> generar_jefe_rojo()
+      |> activar_muros_pinchos()
     else
       state
     end
   end
 
-  defp spawn_red_boss(state) do
-    key = find_empty_coordinate(state)
+  defp generar_jefe_rojo(state) do
+    key = buscar_coordenada_vacia(state)
     unique_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
 
     put_in(state, [:obstacles, key], %{
       type: "boss_rojo",
       id: unique_id,
-      lives: @boss_max_lives,
-      max_lives: @boss_max_lives,
+      lives: @vidas_maximas_jefe,
+      max_lives: @vidas_maximas_jefe,
       shoot_timer: 0
     })
   end
 
-  defp activate_spike_walls(state) do
+  defp activar_muros_pinchos(state) do
     walls =
       state.obstacles
       |> Enum.filter(fn {_, obs} -> obs.type == "muro_gris" end)
@@ -387,7 +390,7 @@ defmodule TankWars.GameServer do
     amount =
       walls
       |> length()
-      |> Kernel.*(@spike_wall_ratio)
+      |> Kernel.*(@proporcion_muros_pinchos)
       |> Float.ceil()
       |> trunc()
 
@@ -401,20 +404,20 @@ defmodule TankWars.GameServer do
     end)
   end
 
-  defp spawn_random_tower(state) do
-    key = find_empty_coordinate(state)
+  defp generar_torre_aleatoria(state) do
+    key = buscar_coordenada_vacia(state)
     unique_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
 
     put_in(state, [:obstacles, key], %{
       type: "torre_vida",
       health: 100,
       id: unique_id,
-      lives: @tower_max_lives,
-      max_lives: @tower_max_lives
+      lives: @vidas_maximas_torre,
+      max_lives: @vidas_maximas_torre
     })
   end
 
-  defp spawn_cobertura_muro(state) do
+  defp generar_muro_cobertura(state) do
     dir = Enum.random([:h, :v])
     rx = Enum.random(2..(@width - 3))
     ry = Enum.random(2..(@height - 3))
@@ -428,7 +431,7 @@ defmodule TankWars.GameServer do
     collision = Enum.any?(coords, fn k -> Map.has_key?(state.obstacles, k) end)
 
     if collision do
-      spawn_cobertura_muro(state)
+      generar_muro_cobertura(state)
     else
       Enum.reduce(coords, state, fn k, acc ->
         put_in(acc, [:obstacles, k], %{type: "muro_gris", health: 50})
@@ -436,14 +439,14 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp apply_move(state, player_id, dx, dy) do
+  defp aplicar_movimiento(state, player_id, dx, dy) do
     case Map.fetch(state.players, player_id) do
       {:ok, %{lives: lives}} when lives <= 0 ->
         state
 
       {:ok, player} ->
-        nx = clamp(player.x + normalize_step(dx), 0, @width - 1)
-        ny = clamp(player.y + normalize_step(dy), 0, @height - 1)
+        nx = limitar(player.x + normalizar_paso(dx), 0, @width - 1)
+        ny = limitar(player.y + normalizar_paso(dy), 0, @height - 1)
         key = "#{nx},#{ny}"
 
         occupied_by_player =
@@ -461,23 +464,23 @@ defmodule TankWars.GameServer do
             state
 
           obstacle && obstacle.type == "boss_rojo" ->
-            damage_player(state, player_id, player, nx, ny)
+            causar_danho_jugador(state, player_id, player, nx, ny)
 
           obstacle && obstacle.type == "muro_pincho" ->
-            damage_player(state, player_id, player, nx, ny)
+            causar_danho_jugador(state, player_id, player, nx, ny)
 
           obstacle ->
             state
 
           true ->
             now = System.monotonic_time(:millisecond)
-            terrain = destination_terrain(state.territory, key, player_id)
-            {can_advance, player} = apply_movement_weight(player, terrain)
+            terrain = terreno_destino(state.territory, key, player_id)
+            {can_advance, player} = aplicar_factor_movimiento(player, terrain)
 
             player =
               player
-              |> Map.put(:moving_until, now + @movement_idle_ms)
-              |> pause_player_reload(now)
+              |> Map.put(:moving_until, now + @umbral_reposo_ms)
+              |> pausar_recarga_jugador(now)
 
             state = put_in(state, [:players, player_id], player)
 
@@ -487,7 +490,7 @@ defmodule TankWars.GameServer do
               |> put_in([:players, player_id, :y], ny)
               |> Map.update!(:tick, &(&1 + 1))
               |> put_in([:territory, key], player_id)
-              |> collect_powerup(player_id, nx, ny)
+              |> recoger_potenciador(player_id, nx, ny)
             else
               state
             end
@@ -498,7 +501,7 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp collect_powerup(state, player_id, x, y) do
+  defp recoger_potenciador(state, player_id, x, y) do
     {collected, remaining} =
       state.powerups
       |> Enum.split_with(fn p -> p.x == x and p.y == y end)
@@ -506,11 +509,11 @@ defmodule TankWars.GameServer do
     state = %{state | powerups: remaining}
 
     Enum.reduce(collected, state, fn powerup, acc ->
-      apply_powerup(acc, player_id, powerup.type)
+      aplicar_potenciador(acc, player_id, powerup.type)
     end)
   end
 
-  defp apply_powerup(state, player_id, "life") do
+  defp aplicar_potenciador(state, player_id, "life") do
     state
     |> update_in([:players, player_id, :lives], fn lives ->
       min(5, lives + 1)
@@ -518,21 +521,21 @@ defmodule TankWars.GameServer do
     |> put_in([:players, player_id, :life_effect_timer], 25)
   end
 
-  defp apply_powerup(state, player_id, "shield") do
-    put_in(state, [:players, player_id, :shield_timer], @shield_duration_ticks)
+  defp aplicar_potenciador(state, player_id, "shield") do
+    put_in(state, [:players, player_id, :shield_timer], @duracion_escudo)
   end
 
-  defp apply_powerup(state, player_id, "speed") do
+  defp aplicar_potenciador(state, player_id, "speed") do
     put_in(state, [:players, player_id, :speed_timer], 50)
   end
 
-  defp apply_aim(state, player_id, dx, dy) do
+  defp aplicar_apuntado(state, player_id, dx, dy) do
     case Map.fetch(state.players, player_id) do
       {:ok, %{lives: lives}} when lives <= 0 ->
         state
 
       {:ok, _player} ->
-        case normalize_direction(dx, dy) do
+        case normalizar_direccion(dx, dy) do
           nil ->
             state
 
@@ -547,47 +550,47 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp apply_player_shot(state, player_id, dx, dy) do
+  defp aplicar_disparo_jugador(state, player_id, dx, dy) do
     case Map.fetch(state.players, player_id) do
       {:ok, %{lives: lives}} when lives <= 0 ->
         state
 
       {:ok, player} ->
-        ammo = player |> Map.get(:ammo, @max_ammo) |> min(@max_ammo)
+        ammo = player |> Map.get(:ammo, @municion_maxima) |> min(@municion_maxima)
 
         if ammo <= 0 do
           state
         else
-          case normalize_direction(dx, dy) do
+          case normalizar_direccion(dx, dy) do
             nil ->
               state
 
             {nx, ny} ->
               now = System.monotonic_time(:millisecond)
               remaining_ammo = ammo - 1
-              reload_paused = remaining_ammo == 0 and player_moving?(player, now)
+              reload_paused = remaining_ammo == 0 and jugador_en_movimiento?(player, now)
 
               reload_ends_at =
                 cond do
                   remaining_ammo > 0 -> Map.get(player, :reload_ends_at)
                   reload_paused -> nil
-                  true -> now + @reload_duration_ms
+                  true -> now + @duracion_recarga_ms
                 end
 
               projectile = %{
                 x: player.x + 0.5,
                 y: player.y + 0.5,
-                dx: nx * @projectile_speed,
-                dy: ny * @projectile_speed,
+                dx: nx * @velocidad_proyectil,
+                dy: ny * @velocidad_proyectil,
                 origin_id: player_id,
                 origin_type: "player"
               }
 
               state
               |> put_in([:players, player_id, :ammo], remaining_ammo)
-              |> put_in([:players, player_id, :max_ammo], @max_ammo)
+              |> put_in([:players, player_id, :max_ammo], @municion_maxima)
               |> put_in([:players, player_id, :reload_ends_at], reload_ends_at)
-              |> put_in([:players, player_id, :reload_remaining_ms], @reload_duration_ms)
+              |> put_in([:players, player_id, :reload_remaining_ms], @duracion_recarga_ms)
               |> put_in([:players, player_id, :reload_paused], reload_paused)
               |> put_in([:players, player_id, :aim_dx], nx)
               |> put_in([:players, player_id, :aim_dy], ny)
@@ -600,7 +603,7 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp spawn_tower_projectiles(state) do
+  defp generar_proyectiles_torres(state) do
     torres = Enum.filter(state.obstacles, fn {_, v} -> v.type == "torre_vida" end)
 
     Enum.reduce(torres, state, fn {pos, torre}, acc ->
@@ -613,10 +616,10 @@ defmodule TankWars.GameServer do
 
         {dx, dy} =
           Enum.random([
-            {0, -@projectile_speed},
-            {0, @projectile_speed},
-            {-@projectile_speed, 0},
-            {@projectile_speed, 0}
+            {0, -@velocidad_proyectil},
+            {0, @velocidad_proyectil},
+            {-@velocidad_proyectil, 0},
+            {@velocidad_proyectil, 0}
           ])
 
         nuevo_proyectile = %{
@@ -633,7 +636,7 @@ defmodule TankWars.GameServer do
     end)
   end
 
-  defp spawn_boss_projectiles(state) do
+  defp generar_proyectiles_jefe(state) do
     Enum.reduce(state.obstacles, state, fn {pos, obs}, acc ->
       if obs.type == "boss_rojo" do
         timer = Map.get(obs, :shoot_timer, 0)
@@ -659,8 +662,8 @@ defmodule TankWars.GameServer do
               %{
                 x: x + 0.5,
                 y: y + 0.5,
-                dx: dx * @boss_projectile_speed,
-                dy: dy * @boss_projectile_speed,
+                dx: dx * @velocidad_proyectil_jefe,
+                dy: dy * @velocidad_proyectil_jefe,
                 origin_id: obs.id,
                 origin_type: "boss"
               }
@@ -668,7 +671,7 @@ defmodule TankWars.GameServer do
 
           acc
           |> Map.update!(:projectiles, &(bullets ++ &1))
-          |> put_in([:obstacles, pos, :shoot_timer], @boss_shoot_delay_ticks)
+          |> put_in([:obstacles, pos, :shoot_timer], @espera_disparo_jefe_pulsos)
         end
       else
         acc
@@ -676,7 +679,7 @@ defmodule TankWars.GameServer do
     end)
   end
 
-  defp update_projectiles(state) do
+  defp actualizar_proyectiles(state) do
     projectiles =
       Enum.map(state.projectiles, fn p ->
         %{p | x: p.x + p.dx, y: p.y + p.dy}
@@ -702,13 +705,13 @@ defmodule TankWars.GameServer do
       cond do
         hit_player ->
           {pid, player} = hit_player
-          damage_player(acc, pid, player, cell_x, cell_y)
+          causar_danho_jugador(acc, pid, player, cell_x, cell_y)
 
         obstacle && obstacle.type == "torre_vida" && p.origin_type == "player" ->
-          damage_tower(acc, key, obstacle, cell_x, cell_y)
+          causar_danho_torre(acc, key, obstacle, cell_x, cell_y)
 
         obstacle && obstacle.type == "boss_rojo" && p.origin_type == "player" ->
-          damage_boss(acc, key, obstacle, cell_x, cell_y)
+          causar_danho_jefe(acc, key, obstacle, cell_x, cell_y)
 
         obstacle && obstacle.type == "muro_gris" ->
           # rompe la bala contra muros grises de cobertura
@@ -720,37 +723,37 @@ defmodule TankWars.GameServer do
     end)
   end
 
-  defp update_reloads(state, now) do
+  defp actualizar_recargas(state, now) do
     players =
       Map.new(state.players, fn {id, player} ->
-        {id, update_player_reload(player, now)}
+        {id, actualizar_recarga_jugador(player, now)}
       end)
 
     %{state | players: players}
   end
 
-  defp update_player_reload(player, now) do
-    ammo = Map.get(player, :ammo, @max_ammo)
+  defp actualizar_recarga_jugador(player, now) do
+    ammo = Map.get(player, :ammo, @municion_maxima)
     reload_ends_at = Map.get(player, :reload_ends_at)
 
     cond do
       ammo > 0 ->
         Map.put(player, :reload_paused, false)
 
-      player_moving?(player, now) ->
-        pause_player_reload(player, now)
+      jugador_en_movimiento?(player, now) ->
+        pausar_recarga_jugador(player, now)
 
       reload_ends_at && now >= reload_ends_at ->
         Map.merge(player, %{
-          ammo: @max_ammo,
-          max_ammo: @max_ammo,
+          ammo: @municion_maxima,
+          max_ammo: @municion_maxima,
           reload_ends_at: nil,
-          reload_remaining_ms: @reload_duration_ms,
+          reload_remaining_ms: @duracion_recarga_ms,
           reload_paused: false
         })
 
       is_nil(reload_ends_at) ->
-        remaining = Map.get(player, :reload_remaining_ms, @reload_duration_ms)
+        remaining = Map.get(player, :reload_remaining_ms, @duracion_recarga_ms)
 
         player
         |> Map.put(:reload_ends_at, now + remaining)
@@ -761,11 +764,11 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp pause_player_reload(player, now) do
-    if Map.get(player, :ammo, @max_ammo) <= 0 do
+  defp pausar_recarga_jugador(player, now) do
+    if Map.get(player, :ammo, @municion_maxima) <= 0 do
       remaining =
         case Map.get(player, :reload_ends_at) do
-          nil -> Map.get(player, :reload_remaining_ms, @reload_duration_ms)
+          nil -> Map.get(player, :reload_remaining_ms, @duracion_recarga_ms)
           reload_ends_at -> max(0, reload_ends_at - now)
         end
 
@@ -778,10 +781,10 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp player_moving?(player, now),
+  defp jugador_en_movimiento?(player, now),
     do: now < Map.get(player, :moving_until, 0)
 
-  defp destination_terrain(territory, key, player_id) do
+  defp terreno_destino(territory, key, player_id) do
     case Map.get(territory, key) do
       ^player_id -> :own
       nil -> :unclaimed
@@ -789,34 +792,36 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp apply_movement_weight(player, terrain) do
+  defp aplicar_factor_movimiento(player, terrain) do
     if Map.get(player, :speed_timer, 0) > 0 do
       {true, Map.merge(player, %{movement_terrain: :speed, movement_credit: 0})}
     else
-      apply_movement_weight_normal(player, terrain)
+      aplicar_factor_movimiento_normal(player, terrain)
     end
   end
 
-  defp apply_movement_weight_normal(player, :own) do
+  defp aplicar_factor_movimiento_normal(player, :own) do
     {true, Map.merge(player, %{movement_terrain: :own, movement_credit: 0})}
   end
 
-  defp apply_movement_weight_normal(player, terrain) do
+  defp aplicar_factor_movimiento_normal(player, terrain) do
     if Map.get(player, :movement_terrain) != terrain do
       {true, Map.merge(player, %{movement_terrain: terrain, movement_credit: 0})}
     else
-      weight = if terrain == :enemy, do: @enemy_speed_weight, else: @unclaimed_speed_weight
+      weight =
+        if terrain == :enemy, do: @velocidad_enemigo, else: @velocidad_sin_capturar
+
       credit = Map.get(player, :movement_credit, 0) + weight
 
-      if credit >= @movement_scale do
-        {true, Map.put(player, :movement_credit, credit - @movement_scale)}
+      if credit >= @escala_movimiento do
+        {true, Map.put(player, :movement_credit, credit - @escala_movimiento)}
       else
         {false, Map.put(player, :movement_credit, credit)}
       end
     end
   end
 
-  defp shift_reload_deadlines(state, paused_duration) do
+  defp ajustar_fin_recargas(state, paused_duration) do
     players =
       Map.new(state.players, fn {id, player} ->
         reload_ends_at =
@@ -831,7 +836,7 @@ defmodule TankWars.GameServer do
     %{state | players: players}
   end
 
-  defp update_hit_animations(state) do
+  defp actualizar_animaciones_impacto(state) do
     players =
       Map.new(state.players, fn {id, p} ->
         {id, %{p | hit_timer: max(0, p.hit_timer - 1)}}
@@ -846,17 +851,17 @@ defmodule TankWars.GameServer do
     %{state | players: players, hit_effects: hit_effects}
   end
 
-  defp damage_tower(state, key, tower, hit_x, hit_y) do
-    lives = tower |> Map.get(:lives, @tower_max_lives) |> max(0)
-    max_lives = Map.get(tower, :max_lives, @tower_max_lives)
+  defp causar_danho_torre(state, key, tower, hit_x, hit_y) do
+    lives = tower |> Map.get(:lives, @vidas_maximas_torre) |> max(0)
+    max_lives = Map.get(tower, :max_lives, @vidas_maximas_torre)
     new_lives = max(0, lives - 1)
 
     effect = %{
       x: hit_x,
       y: hit_y,
       color: "#f5c542",
-      timer: @hit_effect_ticks,
-      max_timer: @hit_effect_ticks
+      timer: @pulsos_efecto_impacto,
+      max_timer: @pulsos_efecto_impacto
     }
 
     state = Map.update(state, :hit_effects, [effect], fn effects -> [effect | effects] end)
@@ -864,23 +869,23 @@ defmodule TankWars.GameServer do
     if new_lives == 0 do
       state
       |> update_in([:obstacles], &Map.delete(&1, key))
-      |> spawn_random_tower()
+      |> generar_torre_aleatoria()
     else
       put_in(state, [:obstacles, key], %{tower | lives: new_lives, max_lives: max_lives})
     end
   end
 
-  defp damage_boss(state, key, boss, hit_x, hit_y) do
-    lives = boss |> Map.get(:lives, @boss_max_lives) |> max(0)
-    max_lives = Map.get(boss, :max_lives, @boss_max_lives)
+  defp causar_danho_jefe(state, key, boss, hit_x, hit_y) do
+    lives = boss |> Map.get(:lives, @vidas_maximas_jefe) |> max(0)
+    max_lives = Map.get(boss, :max_lives, @vidas_maximas_jefe)
     new_lives = max(0, lives - 1)
 
     effect = %{
       x: hit_x,
       y: hit_y,
       color: "#ff0000",
-      timer: @hit_effect_ticks,
-      max_timer: @hit_effect_ticks
+      timer: @pulsos_efecto_impacto,
+      max_timer: @pulsos_efecto_impacto
     }
 
     state = Map.update(state, :hit_effects, [effect], fn effects -> [effect | effects] end)
@@ -891,13 +896,13 @@ defmodule TankWars.GameServer do
         type: "muro_pincho",
         health: 50
       })
-      |> spawn_red_boss()
+      |> generar_jefe_rojo()
     else
       put_in(state, [:obstacles, key], %{boss | lives: new_lives, max_lives: max_lives})
     end
   end
 
-  defp damage_player(state, player_id, player, hit_x, hit_y) do
+  defp causar_danho_jugador(state, player_id, player, hit_x, hit_y) do
     if Map.get(player, :shield_timer, 0) > 0 do
       state
     else
@@ -922,7 +927,7 @@ defmodule TankWars.GameServer do
           |> Map.put(:y, hit_y)
         end
 
-      effect = hit_effect(player, hit_x, hit_y)
+      effect = efecto_impacto(player, hit_x, hit_y)
 
       state
       |> Map.update(:hit_effects, [effect], fn effects -> [effect | effects] end)
@@ -930,18 +935,18 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp update_powerups(state) do
-    timer = Map.get(state, :powerup_timer, @powerup_spawn_ticks)
+  defp actualizar_potenciadores(state) do
+    timer = Map.get(state, :powerup_timer, @pulsos_potenciador)
 
     cond do
       timer > 0 ->
         %{state | powerup_timer: timer - 1}
 
       length(Map.get(state, :powerups, [])) >= 3 ->
-        %{state | powerup_timer: @powerup_spawn_ticks}
+        %{state | powerup_timer: @pulsos_potenciador}
 
       true ->
-        key = find_empty_coordinate(state)
+        key = buscar_coordenada_vacia(state)
         [x, y] = String.split(key, ",") |> Enum.map(&String.to_integer/1)
 
         powerup = %{
@@ -953,11 +958,11 @@ defmodule TankWars.GameServer do
 
         state
         |> Map.update(:powerups, [powerup], fn list -> [powerup | list] end)
-        |> Map.put(:powerup_timer, @powerup_spawn_ticks)
+        |> Map.put(:powerup_timer, @pulsos_potenciador)
     end
   end
 
-  defp update_player_effects(state) do
+  defp actualizar_efectos_jugadores(state) do
     players =
       Map.new(state.players, fn {id, player} ->
         shield_timer = max(0, Map.get(player, :shield_timer, 0) - 1)
@@ -976,25 +981,31 @@ defmodule TankWars.GameServer do
     %{state | players: players}
   end
 
-  defp hit_effect(player, x, y) do
-    %{x: x, y: y, color: player.color, timer: @hit_effect_ticks, max_timer: @hit_effect_ticks}
+  defp efecto_impacto(player, x, y) do
+    %{
+      x: x,
+      y: y,
+      color: player.color,
+      timer: @pulsos_efecto_impacto,
+      max_timer: @pulsos_efecto_impacto
+    }
   end
 
-  defp alive_players_count(state) do
+  defp contar_jugadores_vivos(state) do
     Enum.count(state.players, fn {_, p} -> p.lives > 0 end)
   end
 
-  defp game_over?(state) do
+  defp partida_terminada?(state) do
     case Map.get(state, :game_mode, :time_attack) do
       :time_attack ->
-        state.time_left <= 0 or all_players_dead?(state)
+        state.time_left <= 0 or todos_jugadores_muertos?(state)
 
       :sudden_death ->
-        alive_players_count(state) <= 1
+        contar_jugadores_vivos(state) <= 1
     end
   end
 
-  defp all_players_dead?(state) do
+  defp todos_jugadores_muertos?(state) do
     players = Map.values(state.players)
 
     players != [] and
@@ -1003,7 +1014,7 @@ defmodule TankWars.GameServer do
       end)
   end
 
-  defp find_empty_coordinate(state) do
+  defp buscar_coordenada_vacia(state) do
     rx = Enum.random(0..(@width - 1))
     ry = Enum.random(0..(@height - 1))
     key = "#{rx},#{ry}"
@@ -1012,10 +1023,10 @@ defmodule TankWars.GameServer do
       Map.has_key?(state.obstacles, key) or
         Enum.any?(state.players, fn {_, p} -> p.x == rx and p.y == ry end)
 
-    if collision, do: find_empty_coordinate(state), else: key
+    if collision, do: buscar_coordenada_vacia(state), else: key
   end
 
-  def public_state(state) do
+  def estado_publico(state) do
     state
     |> Map.take([
       :width,
@@ -1032,42 +1043,42 @@ defmodule TankWars.GameServer do
       :game_mode
     ])
     |> Map.update!(:players, fn players ->
-      Map.new(players, fn {id, player} -> {id, normalize_public_player(player)} end)
+      Map.new(players, fn {id, player} -> {id, normalizar_jugador_publico(player)} end)
     end)
   end
 
-  defp normalize_public_player(player) do
-    ammo = Map.get(player, :ammo, @max_ammo)
-    ammo = if is_number(ammo), do: min(ammo, @max_ammo), else: @max_ammo
+  defp normalizar_jugador_publico(player) do
+    ammo = Map.get(player, :ammo, @municion_maxima)
+    ammo = if is_number(ammo), do: min(ammo, @municion_maxima), else: @municion_maxima
 
     player
     |> Map.put(:ammo, ammo)
-    |> Map.put(:max_ammo, @max_ammo)
+    |> Map.put(:max_ammo, @municion_maxima)
   end
 
-  defp player_connections(state), do: Map.get(state, :player_connections, %{})
+  defp conexiones_jugadores(state), do: Map.get(state, :player_connections, %{})
 
   defp client_key(nil, connection_id), do: {:connection, connection_id}
   defp client_key("", connection_id), do: {:connection, connection_id}
   defp client_key(client_id, _connection_id), do: {:client, client_id}
 
-  defp reserved_player_for_client(state, client_key) do
+  defp jugador_reservado_cliente(state, client_key) do
     state
-    |> player_connections()
+    |> conexiones_jugadores()
     |> Enum.find_value(fn {player_id, connection} ->
       if connection.client_id == client_key, do: player_id
     end)
   end
 
-  defp available_player_id(state) do
-    connections = player_connections(state)
+  defp id_jugador_disponible(state) do
+    connections = conexiones_jugadores(state)
     Enum.find(@player_ids, fn player_id -> !Map.has_key?(connections, player_id) end)
   end
 
-  defp normalize_step(v), do: clamp(round(v), -1, 1)
-  defp clamp(v, min, max), do: max(min, min(v, max))
+  defp normalizar_paso(v), do: limitar(round(v), -1, 1)
+  defp limitar(v, min, max), do: max(min, min(v, max))
 
-  defp normalize_direction(dx, dy) when is_number(dx) and is_number(dy) do
+  defp normalizar_direccion(dx, dy) when is_number(dx) and is_number(dy) do
     length = :math.sqrt(dx * dx + dy * dy)
 
     if length > 0 do
@@ -1077,21 +1088,22 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp normalize_direction(_, _), do: nil
-  defp schedule_tick, do: Process.send_after(self(), :tick, @tick_rate)
+  defp normalizar_direccion(_, _), do: nil
+  defp programar_pulso, do: Process.send_after(self(), :tick, @tick_rate)
 
   defp broadcast_state(state),
-    do: TankWarsWeb.Endpoint.broadcast("game:lobby", "state", public_state(state))
+    do: TankWarsWeb.Endpoint.broadcast("game:lobby", "state", estado_publico(state))
 
   defp display_name(n, id) do
     name = n |> to_string() |> String.trim()
 
     if name == "" or String.downcase(name) == "jugador" do
-      default_player_name(id)
+      nombre_jugador_default(id)
     else
       String.slice(name, 0, 24)
     end
   end
 
-  defp default_player_name(id), do: %{"p1" => "Rojo", "p2" => "Azul", "p3" => "Verde"}[id]
+  defp nombre_jugador_default(id),
+    do: %{"p1" => "Rojo", "p2" => "Azul", "p3" => "Verde"}[id]
 end

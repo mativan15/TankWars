@@ -272,7 +272,7 @@ Expone el endpoint de diagnostico:
 GET /api/state
 ```
 
-Este controlador consulta `TankWars.GameServer.current_state()` y responde JSON.
+Este controlador consulta `TankWars.GameServer.estado_actual()` y responde JSON.
 Sirve para verificar rapidamente que el backend esta vivo.
 
 #### `lib/tankwars_web/controllers/error_html.ex`
@@ -314,7 +314,7 @@ Cuando el cliente entra al canal:
 phx_join -> game:lobby
 ```
 
-el canal llama a `TankWars.GameServer.join_player/1`, asigna un `player_id` y
+el canal llama a `TankWars.GameServer.registrar_jugador/1`, asigna un `player_id` y
 devuelve el estado actual.
 
 Cuando el cliente envia:
@@ -326,7 +326,7 @@ Cuando el cliente envia:
 como evento `move`, el canal llama a:
 
 ```elixir
-TankWars.GameServer.move_player(player_id, dx, dy)
+TankWars.GameServer.mover_jugador(player_id, dx, dy)
 ```
 
 Luego hace `broadcast!` del nuevo estado para que todos los navegadores
@@ -400,7 +400,7 @@ priv/static/assets/app.js
   -> WebSocket /socket/websocket
   -> TankWarsWeb.UserSocket
   -> TankWarsWeb.GameChannel join game:lobby
-  -> TankWars.GameServer.join_player
+  -> TankWars.GameServer.registrar_jugador
   -> respuesta con player_id y state
 ```
 
@@ -410,7 +410,7 @@ Flujo al mover un tanque:
 Teclado WASD/flechas
   -> app.js envia evento move
   -> GameChannel.handle_in("move", ...)
-  -> GameServer.move_player(...)
+  -> GameServer.mover_jugador(...)
   -> GameServer actualiza posicion, tick y territorio
   -> GameChannel broadcast!("state", state)
   -> todos los navegadores redibujan el Canvas

@@ -99,7 +99,7 @@ El diseño actual es altamente modular, permitiendo reutilizar cerca del **80% d
 ### 1. Implementación de Proyectiles para los Tanques Jugadores
 * **Frontend (`app.js`):** Escuchar el evento de teclado `Spacebar` (Barra espaciadora). Al presionarse, capturar la última dirección en la que se movió el tanque (ej. `last_dx`, `last_dy`) y hacer un `push` al canal: `push(topic, "player_shoot", {dx: last_dx, dy: last_dy})`.
 * **Backend (`game_server.ex`):** Crear un `handle_call` para `{:player_shoot, player_id, dx, dy}` que añada un mapa a la lista `projectiles`, pero esta vez configurando un `origin_type: :player` para diferenciarlo del de las torres.
-* **Reutilización:** La función `update_projectiles/1` actual es idéntica; solo se le debe agregar una regla para que si el proyectil es del jugador, disminuya la vida de las torres o de otros tanques enemigos en lugar de la propia.
+* **Reutilización:** La función `actualizar_proyectiles/1` actual es idéntica; solo se le debe agregar una regla para que si el proyectil es del jugador, disminuya la vida de las torres o de otros tanques enemigos en lugar de la propia.
 
 ### 2. Definición del Sistema de Ganadores
 * **Criterio de Victoria:** Actualmente el juego termina si `time_left <= 0` o `any_player_dead?`. 
