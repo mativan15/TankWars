@@ -14,7 +14,7 @@ defmodule TankWarsWeb.PageController do
       <body>
         <main class="shell">
           <section class="hud" aria-label="Estado de partida">
-            <div class="brand">
+            <div>
               <p class="eyebrow">Ivan Sardón - Diego Vasquez - Steffano Ballesteros</p>
               <h1>Tank Wars</h1>
             </div>

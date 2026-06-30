@@ -6,7 +6,6 @@
     blue: "#008cff",
     danger: "#ff315d",
     gold: "#f9f871",
-    green: "#39ff88",
     towerHealth: "#00ff66",
     wall: "#211331",
     wallHighlight: "#39244d",
@@ -35,6 +34,7 @@
   const topic = "game:lobby";
   const joinRef = "1";
   let socket = null;
+  let heartbeatTimer = null;
   let nextRef = 1;
   let connected = false;
   let playerId = null;
@@ -42,34 +42,6 @@
   let joinRejected = false;
   let joinError = "";
   let lastAimSentAt = 0;
-
-  
-
-  const menuMusic = new Audio("/sounds/inicio.mp3");
-  menuMusic.loop = true;
-  menuMusic.volume = 0.25;
-
-  const battleMusic = new Audio("/sounds/batalla.mp3");
-  battleMusic.loop = true;
-  battleMusic.volume = 0.30;
-
-  const finalMusic = new Audio("/sounds/final.mp3");
-  finalMusic.loop = false;
-  finalMusic.volume = 0.40;
-
-  let finalMusicStarted = false;
-
-  let menuMusicStarted = false;
-
-  function startMenuMusic() {
-    if (!menuMusicStarted && state && state.game_state === "menu") {
-      menuMusicStarted = true;
-      menuMusic.play().catch(() => {});
-    }
-  }
-
-  document.addEventListener("click", startMenuMusic);
-  document.addEventListener("keydown", startMenuMusic);
 
   let lastLeaderboardSignature = "";
   const aimSendIntervalMs = 50;
@@ -125,23 +97,11 @@
           startGameWithMode("sudden_death", event);
         });
 
-        battleMusic.pause();
-        finalMusic.pause();
-        finalMusicStarted = false;
-
-        startMenuMusic();
-
         timerEl.textContent = state.time_left + "s";
       } else if (state.game_state === "playing") {
         menuOverlay.style.display = "none";
         timerEl.textContent = state.time_left + "s";
-
-        menuMusic.pause();
-
-        if (battleMusic.paused) {
-          battleMusic.play().catch(() => {});
-        }
-      }else if (state.game_state === "paused") {
+      } else if (state.game_state === "paused") {
         menuOverlay.style.display = "flex";
         menuOverlay.innerHTML = `
           <h2 class="overlay-title">PAUSA</h2>
@@ -149,33 +109,20 @@
         `;
         timerEl.textContent = state.time_left + "s";
       } else if (state.game_state === "game_over") {
-          menuMusic.pause();
-          battleMusic.pause();
+        const summary = buildGameSummary();
 
-          if (!finalMusicStarted) {
-            finalMusicStarted = true;
-            finalMusic.currentTime = 0;
-            finalMusic.play().catch(() => {});
-          }
+        menuOverlay.style.display = "flex";
+        menuOverlay.innerHTML = `
+          <h2 class="overlay-title overlay-title--danger">FIN DE LA PARTIDA</h2>
+          <p class="overlay-copy">Puntajes finales</p>
+          ${summary}
+          <button id="reset-btn" class="overlay-button overlay-button--secondary">REINICIAR ARENA</button>
+        `;
 
-          const summary = buildGameSummary();
-
-          menuOverlay.style.display = "flex";
-          menuOverlay.innerHTML = `
-            <h2 class="overlay-title overlay-title--danger">FIN DE LA PARTIDA</h2>
-            <p class="overlay-copy">Puntajes finales</p>
-            ${summary}
-            <button id="reset-btn" class="overlay-button overlay-button--secondary">REINICIAR ARENA</button>
-          `;
-
-          document.querySelector("#reset-btn").addEventListener("click", () => {
-            finalMusic.pause();
-            finalMusic.currentTime = 0;
-            finalMusicStarted = false;
-            menuMusicStarted = false;
-            push(topic, "reset", {});
-          });
-        }
+        document.querySelector("#reset-btn").addEventListener("click", () => {
+          push(topic, "reset", {});
+        });
+      }
     }
 
     if (joinRejected) showJoinError(joinError);
@@ -183,10 +130,6 @@
 
   function startGameWithMode(mode, event) {
     event.stopPropagation();
-    menuMusic.pause();
-    menuMusic.currentTime = 0;
-    battleMusic.currentTime = 0;
-    battleMusic.play().catch(() => {});
     push(topic, "start_game", { mode });
   }
 
@@ -248,8 +191,6 @@
       const row = document.createElement("li");
       row.className = "territory-row";
       if (entry.id === playerId) row.classList.add("is-self");
-      if (rank === 1) row.classList.add("is-leading");
-
       const position = document.createElement("span");
       position.className = "territory-rank";
       position.textContent = String(rank);
@@ -304,9 +245,9 @@
   return `
     <p class="overlay-copy">Modo: ${modeName}</p>
 
-    <div class="final-summary">
+    <div>
       ${ranking.map((p, i) => `
-        <div class="summary-row">
+        <div>
           <strong style="color:${p.color}">
           ${i === 0 ? "🏆 GANADOR!!! " : ""}
           ${i === 1 ? "🥈" : ""}
@@ -343,7 +284,8 @@
 
   function push(topicName, event, payload) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    socket.send(JSON.stringify([joinRef, String(nextRef++), topicName, event, payload]));
+    const messageJoinRef = topicName === "phoenix" ? null : joinRef;
+    socket.send(JSON.stringify([messageJoinRef, String(nextRef++), topicName, event, payload]));
   }
 
   function connect() {
@@ -355,7 +297,9 @@
       joinRejected = false;
       joinError = "";
       updateHud();
-      push(topic, "phx_join", { name: "Jugador", client_id: clientId });
+      push(topic, "phx_join", { client_id: clientId });
+      window.clearInterval(heartbeatTimer);
+      heartbeatTimer = window.setInterval(() => push("phoenix", "heartbeat", {}), 30000);
     });
 
     socket.addEventListener("message", (event) => {
@@ -375,16 +319,20 @@
       if (messageEvent === "phx_reply" && payload.status === "ok" && payload.response.state) {
         playerId = payload.response.player_id;
         state = payload.response.state;
-      }
-      if (messageEvent === "state") {
+      } else if (messageEvent === "state") {
         state = payload;
+      } else {
+        return;
       }
+
       updateHud();
       draw();
     });
 
     socket.addEventListener("close", () => {
       connected = false;
+      window.clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
       updateHud();
       if (!joinRejected) window.setTimeout(connect, 1200);
     });
@@ -462,7 +410,6 @@
 
     event.preventDefault();
     updateLocalAim(aim.dx, aim.dy);
-    push(topic, "aim_player", aim);
     push(topic, "shoot_player", aim);
     draw();
   }
@@ -850,10 +797,10 @@
       ctx.save();
       ctx.translate(cx, cy);
       if (player.shield_timer && player.shield_timer > 0) {
-        drawShieldBarrier(player, size);
+        drawShieldBarrier(size);
       }
       if (player.speed_timer && player.speed_timer > 0) {
-        drawSpeedEffect(player, size);
+        drawSpeedEffect(size);
       }
 
       ctx.fillStyle = player.hit_timer > 0 ? "#ffffff" : player.color;
@@ -884,7 +831,7 @@
     });
   }
 
-  function drawShieldBarrier(player, size) {
+  function drawShieldBarrier(size) {
     const time = performance.now() / 200;
     const pulse = Math.sin(time) * 0.08 + 1;
     const radius = size * 0.85 * pulse;
@@ -911,7 +858,7 @@
     ctx.restore();
   }
 
-  function drawSpeedEffect(player, size) {
+  function drawSpeedEffect(size) {
     const time = performance.now() / 100;
     const radius = size * 0.85;
 

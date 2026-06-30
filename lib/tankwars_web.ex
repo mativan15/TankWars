@@ -24,7 +24,7 @@ defmodule TankWarsWeb do
     end
   end
 
-  def static_paths, do: ~w(assets sounds favicon.ico robots.txt)
+  def static_paths, do: ~w(assets)
 
   defmacro __using__(which) when is_atom(which) do
     apply(__MODULE__, which, [])

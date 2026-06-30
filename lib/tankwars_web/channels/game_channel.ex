@@ -4,10 +4,9 @@ defmodule TankWarsWeb.GameChannel do
 
   @impl true
   def join("game:lobby", payload, socket) do
-    name = Map.get(payload, "name", "Jugador")
     client_id = Map.get(payload, "client_id")
 
-    case GameServer.registrar_jugador(name, client_id, self()) do
+    case GameServer.registrar_jugador(client_id, self()) do
       {:ok, %{player_id: player_id, state: estado_inicial}} ->
         socket = assign(socket, :player_id, player_id)
         {:ok, %{player_id: player_id, state: estado_inicial}, socket}
@@ -63,10 +62,5 @@ defmodule TankWarsWeb.GameChannel do
   def handle_in("reset", _payload, socket) do
     GameServer.reset()
     {:reply, :ok, socket}
-  end
-
-  def handle_in("set_game_mode", %{"mode" => mode}, socket) do
-    state = TankWars.GameServer.establecer_modo_juego(mode)
-    {:reply, {:ok, state}, socket}
   end
 end
