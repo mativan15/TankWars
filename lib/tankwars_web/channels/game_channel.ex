@@ -27,8 +27,8 @@ defmodule TankWarsWeb.GameChannel do
   end
 
   @impl true
-  def handle_in("start_game", _payload, socket) do
-    GameServer.start_game()
+  def handle_in("start_game", payload, socket) do
+    GameServer.start_game(Map.get(payload, "mode"))
     {:reply, :ok, socket}
   end
 

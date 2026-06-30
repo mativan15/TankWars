@@ -50,7 +50,7 @@ defmodule TankWars.GameServer do
   def shoot_player(player_id, dx, dy),
     do: GenServer.call(@name, {:shoot_player, player_id, dx, dy})
 
-  def start_game, do: GenServer.call(@name, :start_game)
+  def start_game(mode \\ nil), do: GenServer.call(@name, {:start_game, mode})
   def set_game_mode(mode), do: GenServer.call(@name, {:set_game_mode, mode})
   def toggle_pause, do: GenServer.call(@name, :toggle_pause)
   def reset, do: GenServer.call(@name, :reset)
@@ -134,11 +134,21 @@ defmodule TankWars.GameServer do
   end
 
   @impl true
-  def handle_call(:start_game, _from, state) do
+  def handle_call({:start_game, mode}, _from, state) do
     if state.game_state == :menu do
+      game_mode =
+        case mode do
+          "sudden_death" -> :sudden_death
+          :sudden_death -> :sudden_death
+          "time_attack" -> :time_attack
+          :time_attack -> :time_attack
+          _ -> state.game_mode
+        end
+
       new_state = %{
         state
         | game_state: :playing,
+          game_mode: game_mode,
           last_time_check: System.monotonic_time(:millisecond)
       }
 

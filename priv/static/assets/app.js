@@ -90,6 +90,10 @@
       playerEl.textContent = state.players[playerId].name;
       playerEl.style.color = state.players[playerId].color;
       playerBox.style.setProperty("--card-accent", state.players[playerId].color);
+      arenaWrap.style.setProperty(
+        "--arena-border-color",
+        withAlpha(state.players[playerId].color, 0.82)
+      );
       
       const currentLives = state.players[playerId].lives;
       livesEl.textContent = "❤️".repeat(currentLives) + "🖤".repeat(5 - currentLives);
@@ -97,6 +101,7 @@
     } else {
       playerEl.style.removeProperty("color");
       playerBox.style.removeProperty("--card-accent");
+      arenaWrap.style.removeProperty("--arena-border-color");
       livesEl.textContent = "🖤🖤🖤🖤🖤";
       ammoEl.textContent = "○○○○○";
       ammoEl.setAttribute("aria-label", "Sin munición asignada");
@@ -111,19 +116,13 @@
 
           <button id="mode-time-btn" class="overlay-button">MODO CONTRARRELOJ</button>
           <button id="mode-death-btn" class="overlay-button overlay-button--secondary">MUERTE SÚBITA</button>
-
-          <p class="overlay-copy">Modo actual: ${
-            state.game_mode === "sudden_death" ? "Muerte súbita" : "Contrarreloj"
-          }</p>
-
-          <button id="start-btn" class="overlay-button">INICIAR PARTIDA</button>
         `;
-        document.querySelector("#mode-time-btn").addEventListener("click", () => {
-          push(topic, "set_game_mode", { mode: "time_attack" });
+        document.querySelector("#mode-time-btn").addEventListener("click", event => {
+          startGameWithMode("time_attack", event);
         });
 
-        document.querySelector("#mode-death-btn").addEventListener("click", () => {
-          push(topic, "set_game_mode", { mode: "sudden_death" });
+        document.querySelector("#mode-death-btn").addEventListener("click", event => {
+          startGameWithMode("sudden_death", event);
         });
 
         battleMusic.pause();
@@ -131,31 +130,6 @@
         finalMusicStarted = false;
 
         startMenuMusic();
-
-        document.querySelector("#start-btn").addEventListener("click", async (event) => {
-          event.stopPropagation();
-
-          try {
-            menuMusic.currentTime = 0;
-            await menuMusic.play();
-
-            setTimeout(() => {
-              menuMusic.pause();
-              menuMusic.currentTime = 0;
-
-              battleMusic.currentTime = 0;
-              battleMusic.play().catch(() => {});
-
-              push(topic, "start_game", {});
-            }, 1200);
-          } catch (error) {
-            console.log("No se pudo reproducir música de menú:", error);
-
-            battleMusic.currentTime = 0;
-            battleMusic.play().catch(() => {});
-            push(topic, "start_game", {});
-          }
-        });
 
         timerEl.textContent = state.time_left + "s";
       } else if (state.game_state === "playing") {
@@ -205,6 +179,15 @@
     }
 
     if (joinRejected) showJoinError(joinError);
+  }
+
+  function startGameWithMode(mode, event) {
+    event.stopPropagation();
+    menuMusic.pause();
+    menuMusic.currentTime = 0;
+    battleMusic.currentTime = 0;
+    battleMusic.play().catch(() => {});
+    push(topic, "start_game", { mode });
   }
 
   function getClientId() {
@@ -325,9 +308,9 @@
       ${ranking.map((p, i) => `
         <div class="summary-row">
           <strong style="color:${p.color}">
-          ${i === 0 ? "🏆 Ganaste, quedaste en primer lugar!!!" : ""}
-          ${i === 1 ? "🥈 Quedaste en segundo lugar" : ""}
-          ${i === 2 ? "🥉 Quedaste en tercer lugar" : ""}
+          ${i === 0 ? "🏆 GANADOR!!! " : ""}
+          ${i === 1 ? "🥈" : ""}
+          ${i === 2 ? "🥉" : ""}
         </strong>
         <strong style="color:${p.color}">#${i + 1} ${p.name}</strong>
           <span>Territorio: ${p.territory} celdas</span>
