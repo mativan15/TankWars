@@ -155,6 +155,20 @@ h1 {
   grid-area: player;
 }
 
+.jump-status {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.jump-status.is-ready {
+  color: var(--gold);
+  text-shadow: 0 0 7px rgba(249, 248, 113, 0.55);
+}
+
 #pause-box {
   --card-accent: #00f5ff;
   grid-area: pause;

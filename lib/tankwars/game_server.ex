@@ -14,8 +14,10 @@ defmodule TankWars.GameServer do
   @velocidad_proyectil 0.4
   @municion_maxima 5
   @duracion_recarga_ms 1_800
+  @ventana_rafaga_ms 1_000
+  @duracion_cooldown_salto_ms 5_000
   @umbral_reposo_ms 180
-  # Velocidad relativa: propio 100%, sin capturar 70%, enemigo 45%.
+  # velocidad relativa: propio 100%, sin capturar 70%, enemigo 45%.
   @escala_movimiento 100
   @velocidad_sin_capturar 60
   @velocidad_enemigo 40
@@ -45,6 +47,9 @@ defmodule TankWars.GameServer do
 
   def mover_jugador(player_id, dx, dy),
     do: GenServer.call(@name, {:mover_jugador, player_id, dx, dy})
+
+  def saltar_jugador(player_id),
+    do: GenServer.call(@name, {:saltar_jugador, player_id})
 
   def apuntar_jugador(player_id, dx, dy),
     do: GenServer.call(@name, {:apuntar_jugador, player_id, dx, dy})
@@ -86,6 +91,17 @@ defmodule TankWars.GameServer do
   def handle_call({:mover_jugador, player_id, dx, dy}, _from, state) do
     if state.game_state == :playing do
       new_state = aplicar_movimiento(state, player_id, dx, dy)
+      broadcast_state(new_state)
+      {:reply, :ok, new_state}
+    else
+      {:reply, :ok, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:saltar_jugador, player_id}, _from, state) do
+    if state.game_state == :playing do
+      new_state = aplicar_salto(state, player_id)
       broadcast_state(new_state)
       {:reply, :ok, new_state}
     else
@@ -277,10 +293,12 @@ defmodule TankWars.GameServer do
       lives: 5,
       hit_timer: 0,
       ammo: @municion_maxima,
+      burst_started_at: nil,
+      jump_ready_at: nil,
       reload_ends_at: nil,
       reload_remaining_ms: @duracion_recarga_ms,
       reload_paused: false,
-      moving_until: 0,
+      moving_until: nil,
       movement_terrain: nil,
       movement_credit: 0,
       aim_dx: aim_dx,
@@ -431,6 +449,49 @@ defmodule TankWars.GameServer do
     end
   end
 
+  defp aplicar_salto(state, player_id) do
+    case Map.fetch(state.players, player_id) do
+      {:ok, %{lives: lives}} when lives <= 0 ->
+        state
+
+      {:ok, player} ->
+        now = System.monotonic_time(:millisecond)
+        dx = normalizar_paso(player.aim_dx)
+        dy = normalizar_paso(player.aim_dy)
+        x = player.x + dx * 2
+        y = player.y + dy * 2
+        key = "#{x},#{y}"
+        jump_ready_at = Map.get(player, :jump_ready_at)
+
+        destino_valido? =
+          (is_nil(jump_ready_at) or now >= jump_ready_at) and
+            x >= 0 and x < @width and
+            y >= 0 and y < @height and
+            not Map.has_key?(state.obstacles, key) and
+            not casilla_ocupada_por_otro?(state.players, player_id, x, y)
+
+        if destino_valido? do
+          player =
+            player
+            |> Map.put(:jump_ready_at, now + @duracion_cooldown_salto_ms)
+            |> Map.put(:moving_until, now + @umbral_reposo_ms)
+            |> pausar_recarga_jugador(now)
+
+          state
+          |> put_in([:players, player_id], player)
+          |> put_in([:players, player_id, :x], x)
+          |> put_in([:players, player_id, :y], y)
+          |> put_in([:territory, key], player_id)
+          |> recoger_potenciador(player_id, x, y)
+        else
+          state
+        end
+
+      :error ->
+        state
+    end
+  end
+
   defp recoger_potenciador(state, player_id, x, y) do
     {collected, remaining} =
       state.powerups
@@ -498,6 +559,12 @@ defmodule TankWars.GameServer do
             {nx, ny} ->
               now = System.monotonic_time(:millisecond)
               remaining_ammo = ammo - 1
+              burst_started_at = Map.get(player, :burst_started_at) || now
+              next_burst_started_at = if remaining_ammo == 0, do: nil, else: burst_started_at
+
+              retroceso? =
+                remaining_ammo == 0 and now - burst_started_at <= @ventana_rafaga_ms
+
               reload_paused = remaining_ammo == 0 and jugador_en_movimiento?(player, now)
 
               reload_ends_at =
@@ -516,19 +583,52 @@ defmodule TankWars.GameServer do
                 origin_type: "player"
               }
 
-              state
-              |> put_in([:players, player_id, :ammo], remaining_ammo)
-              |> put_in([:players, player_id, :reload_ends_at], reload_ends_at)
-              |> put_in([:players, player_id, :reload_remaining_ms], @duracion_recarga_ms)
-              |> put_in([:players, player_id, :reload_paused], reload_paused)
-              |> put_in([:players, player_id, :aim_dx], nx)
-              |> put_in([:players, player_id, :aim_dy], ny)
-              |> Map.update!(:projectiles, &[projectile | &1])
+              new_state =
+                state
+                |> put_in([:players, player_id, :ammo], remaining_ammo)
+                |> put_in([:players, player_id, :burst_started_at], next_burst_started_at)
+                |> put_in([:players, player_id, :reload_ends_at], reload_ends_at)
+                |> put_in([:players, player_id, :reload_remaining_ms], @duracion_recarga_ms)
+                |> put_in([:players, player_id, :reload_paused], reload_paused)
+                |> put_in([:players, player_id, :aim_dx], nx)
+                |> put_in([:players, player_id, :aim_dy], ny)
+                |> Map.update!(:projectiles, &[projectile | &1])
+
+              if retroceso? do
+                aplicar_retroceso(new_state, player_id, nx, ny)
+              else
+                new_state
+              end
           end
         end
 
       :error ->
         state
+    end
+  end
+
+  defp aplicar_retroceso(state, player_id, shot_dx, shot_dy) do
+    player = state.players[player_id]
+    x = limitar(player.x - normalizar_paso(shot_dx), 0, @width - 1)
+    y = limitar(player.y - normalizar_paso(shot_dy), 0, @height - 1)
+    key = "#{x},#{y}"
+
+    cond do
+      x == player.x and y == player.y ->
+        state
+
+      casilla_ocupada_por_otro?(state.players, player_id, x, y) ->
+        state
+
+      Map.has_key?(state.obstacles, key) ->
+        state
+
+      true ->
+        state
+        |> put_in([:players, player_id, :x], x)
+        |> put_in([:players, player_id, :y], y)
+        |> put_in([:territory, key], player_id)
+        |> recoger_potenciador(player_id, x, y)
     end
   end
 
@@ -675,6 +775,7 @@ defmodule TankWars.GameServer do
       reload_ends_at && now >= reload_ends_at ->
         Map.merge(player, %{
           ammo: @municion_maxima,
+          burst_started_at: nil,
           reload_ends_at: nil,
           reload_remaining_ms: @duracion_recarga_ms,
           reload_paused: false
@@ -709,8 +810,12 @@ defmodule TankWars.GameServer do
     end
   end
 
-  defp jugador_en_movimiento?(player, now),
-    do: now < Map.get(player, :moving_until, 0)
+  defp jugador_en_movimiento?(player, now) do
+    case Map.get(player, :moving_until) do
+      moving_until when is_integer(moving_until) -> now < moving_until
+      _ -> false
+    end
+  end
 
   defp terreno_destino(territory, key, player_id) do
     case Map.get(territory, key) do
@@ -752,13 +857,12 @@ defmodule TankWars.GameServer do
   defp ajustar_fin_recargas(state, paused_duration) do
     players =
       Map.new(state.players, fn {id, player} ->
-        reload_ends_at =
-          case Map.get(player, :reload_ends_at) do
-            nil -> nil
-            timestamp -> timestamp + paused_duration
-          end
+        player =
+          player
+          |> Map.update(:reload_ends_at, nil, &desplazar_timestamp(&1, paused_duration))
+          |> Map.update(:jump_ready_at, nil, &desplazar_timestamp(&1, paused_duration))
 
-        {id, Map.put(player, :reload_ends_at, reload_ends_at)}
+        {id, player}
       end)
 
     %{state | players: players}
@@ -837,7 +941,7 @@ defmodule TankWars.GameServer do
         player
         |> Map.put(:lives, lives)
         |> Map.put(:hit_timer, @pulsos_efecto_impacto)
-        |> Map.put(:moving_until, 0)
+        |> Map.put(:moving_until, nil)
         |> Map.put(:movement_terrain, nil)
         |> Map.put(:movement_credit, 0)
 
@@ -973,10 +1077,12 @@ defmodule TankWars.GameServer do
   end
 
   defp estado_publico(state) do
+    now = System.monotonic_time(:millisecond)
+
     %{
       width: state.width,
       height: state.height,
-      players: Map.new(state.players, fn {id, player} -> {id, jugador_publico(player)} end),
+      players: Map.new(state.players, fn {id, player} -> {id, jugador_publico(player, now)} end),
       territory: state.territory,
       obstacles:
         Map.new(state.obstacles, fn {position, obstacle} ->
@@ -992,9 +1098,11 @@ defmodule TankWars.GameServer do
     }
   end
 
-  defp jugador_publico(player) do
+  defp jugador_publico(player, now) do
     ammo = Map.get(player, :ammo, @municion_maxima)
     ammo = if is_number(ammo), do: min(ammo, @municion_maxima), else: @municion_maxima
+    jump_ready_at = Map.get(player, :jump_ready_at)
+    jump_ready = is_nil(jump_ready_at) or now >= jump_ready_at
 
     player
     |> Map.take([
@@ -1014,7 +1122,11 @@ defmodule TankWars.GameServer do
     ])
     |> Map.put(:ammo, ammo)
     |> Map.put(:max_ammo, @municion_maxima)
+    |> Map.put(:jump_ready, jump_ready)
   end
+
+  defp desplazar_timestamp(nil, _duration), do: nil
+  defp desplazar_timestamp(timestamp, duration), do: timestamp + duration
 
   defp conexiones_jugadores(state), do: Map.get(state, :player_connections, %{})
 

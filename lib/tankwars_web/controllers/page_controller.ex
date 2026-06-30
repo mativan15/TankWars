@@ -32,6 +32,7 @@ defmodule TankWarsWeb.PageController do
               <div id="player-box">
                 <span>Jugador</span>
                 <strong id="player">sin asignar</strong>
+                <small id="hud-jump" class="jump-status">SALTO --</small>
               </div>
               <div id="lives-box">
                 <span>Vidas</span>

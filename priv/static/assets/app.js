@@ -18,6 +18,7 @@
   const ctx = canvas.getContext("2d");
   const playerEl = document.querySelector("#player");
   const playerBox = document.querySelector("#player-box");
+  const jumpStatusEl = document.querySelector("#hud-jump");
   const territoryLeaderboardEl = document.querySelector("#territory-leaderboard");
   const livesEl = document.querySelector("#hud-lives");
   const timerEl = document.querySelector("#hud-timer");
@@ -42,10 +43,64 @@
   let joinRejected = false;
   let joinError = "";
   let lastAimSentAt = 0;
+  let audioUnlocked = false;
+  let finalMusicStarted = false;
 
   let lastLeaderboardSignature = "";
   const aimSendIntervalMs = 50;
   const clientId = getClientId();
+
+  const menuMusic = new Audio("/sounds/inicio.mp3");
+  menuMusic.loop = true;
+  menuMusic.volume = 0.25;
+
+  const battleMusic = new Audio("/sounds/batalla.mp3");
+  battleMusic.loop = true;
+  battleMusic.volume = 0.3;
+
+  const finalMusic = new Audio("/sounds/final.mp3");
+  finalMusic.volume = 0.4;
+
+  function playMusic(audio) {
+    if (audioUnlocked && audio.paused) audio.play().catch(() => {});
+  }
+
+  function resetFinalMusic() {
+    finalMusic.pause();
+    finalMusic.currentTime = 0;
+    finalMusicStarted = false;
+  }
+
+  function syncMusic(gameState) {
+    if (!audioUnlocked) return;
+
+    if (gameState === "menu") {
+      battleMusic.pause();
+      resetFinalMusic();
+      playMusic(menuMusic);
+    } else if (gameState === "playing" || gameState === "paused") {
+      menuMusic.pause();
+      resetFinalMusic();
+      playMusic(battleMusic);
+    } else if (gameState === "game_over") {
+      menuMusic.pause();
+      battleMusic.pause();
+
+      if (!finalMusicStarted) {
+        finalMusicStarted = true;
+        finalMusic.currentTime = 0;
+        playMusic(finalMusic);
+      }
+    }
+  }
+
+  function unlockAudio() {
+    audioUnlocked = true;
+    if (state) syncMusic(state.game_state);
+  }
+
+  document.addEventListener("click", unlockAudio, { capture: true });
+  document.addEventListener("keydown", unlockAudio, { capture: true });
 
   function updateHud() {
     updateTerritoryLeaderboard();
@@ -70,6 +125,7 @@
       const currentLives = state.players[playerId].lives;
       livesEl.textContent = "❤️".repeat(currentLives) + "🖤".repeat(5 - currentLives);
       updateAmmoHud(state.players[playerId]);
+      updateJumpStatus(state.players[playerId]);
     } else {
       playerEl.style.removeProperty("color");
       playerBox.style.removeProperty("--card-accent");
@@ -77,9 +133,13 @@
       livesEl.textContent = "🖤🖤🖤🖤🖤";
       ammoEl.textContent = "○○○○○";
       ammoEl.setAttribute("aria-label", "Sin munición asignada");
+      jumpStatusEl.textContent = "SALTO --";
+      jumpStatusEl.classList.remove("is-ready");
     }
 
     if (state) {
+      syncMusic(state.game_state);
+
       if (state.game_state === "menu") {
         menuOverlay.style.display = "flex";
         menuOverlay.innerHTML = `
@@ -120,6 +180,7 @@
         `;
 
         document.querySelector("#reset-btn").addEventListener("click", () => {
+          syncMusic("menu");
           push(topic, "reset", {});
         });
       }
@@ -130,6 +191,8 @@
 
   function startGameWithMode(mode, event) {
     event.stopPropagation();
+    audioUnlocked = true;
+    syncMusic("playing");
     push(topic, "start_game", { mode });
   }
 
@@ -282,6 +345,12 @@
     }
   }
 
+  function updateJumpStatus(player) {
+    const ready = player.jump_ready === true;
+    jumpStatusEl.textContent = ready ? "SALTO LISTO" : "SALTO CARGANDO";
+    jumpStatusEl.classList.toggle("is-ready", ready);
+  }
+
   function push(topicName, event, payload) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     const messageJoinRef = topicName === "phoenix" ? null : joinRef;
@@ -342,6 +411,12 @@
     if (joinRejected || !state || state.game_state !== "playing" || !playerId) return;
     const player = state.players[playerId];
     if (!player || player.lives <= 0) return;
+
+    if (event.code === "Space") {
+      event.preventDefault();
+      if (!event.repeat) push(topic, "jump_player", {});
+      return;
+    }
 
     const key = event.key.toLowerCase();
     const moves = {
@@ -973,6 +1048,7 @@
   pauseButton.addEventListener("click", () => push(topic, "toggle_pause", {}));
   resetButton.addEventListener("click", () => {
     if (window.confirm("¿Reiniciar la partida para todos los jugadores?")) {
+      syncMusic("menu");
       push(topic, "reset", {});
     }
   });

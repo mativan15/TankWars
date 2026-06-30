@@ -89,3 +89,5 @@ Para detener el servidor, presiona `Ctrl+C` dos veces en la terminal.
   * Diseño estético pixel art optimizado sin bordes excedentes para denotar furia pura.
 * **Sistema de Salud Integrado:** Se añadieron **5 vidas (corazones)** dinámicos en la barra superior de estado del HUD.
 * **Feedback Visual de Impacto:** Cuando un tanque colisiona con un proyectil, el servidor activa un `hit_timer` que hace parpadear el tanque en el Canvas por fracciones de segundo.
+* **Retroceso por Ráfaga:** Si un jugador vacía las 5 balas en un máximo de **1 segundo**, el tanque retrocede una casilla. El desplazamiento respeta los límites de la arena, los obstáculos y la posición de otros tanques.
+* **Salto:** Al presionar `Espacio`, el tanque salta dos casillas en la dirección del cañón. Puede superar la casilla intermedia, pero debe aterrizar dentro de la arena y en una casilla sin obstáculos ni otros tanques. La habilidad tiene un cooldown de **5 segundos** y el HUD indica cuándo vuelve a estar lista.

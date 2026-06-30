@@ -45,6 +45,12 @@ defmodule TankWarsWeb.GameChannel do
   end
 
   @impl true
+  def handle_in("jump_player", _payload, socket) do
+    GameServer.saltar_jugador(socket.assigns.player_id)
+    {:reply, :ok, socket}
+  end
+
+  @impl true
   def handle_in("aim_player", %{"dx" => dx, "dy" => dy}, socket) do
     player_id = socket.assigns.player_id
     GameServer.apuntar_jugador(player_id, dx, dy)
