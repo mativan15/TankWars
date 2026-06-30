@@ -10,7 +10,7 @@ defmodule TankWars.GameServer do
   @width 24
   @height 14
   @tick_rate 100
-  @duracion_partida 200
+  @duracion_partida 160
   @velocidad_proyectil 0.4
   @municion_maxima 5
   @duracion_recarga_ms 1_800
