@@ -1,11 +1,22 @@
-# Elixir build artifacts
+
 /_build/
 /deps/
 /.elixir_ls/
 
-# Static/generated assets
+
 /priv/static/cache_manifest.json
 
-# OS/editor files
+
+/docs/*.aux
+/docs/*.fdb_latexmk
+/docs/*.fls
+/docs/*.log
+/docs/*.out
+/docs/*.synctex.gz
+/docs
+
+.*
+
+
 .DS_Store
 *.swp
